@@ -5,18 +5,13 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:ThinQ/data/post.dart';
 import 'package:ThinQ/data/task.dart';
-import 'package:ThinQ/pages/community_page.dart';
-import 'package:ThinQ/pages/login_page.dart';
+import 'package:ThinQ/data/character.dart';
 import 'package:ThinQ/pages/setting_page.dart';
-import 'package:ThinQ/pages/stats_page.dart';
-import 'package:ThinQ/pages/feed_page.dart';
-import 'package:ThinQ/pages/routine_booster_page.dart';
-import 'package:ThinQ/pages/life_tree_page.dart';
-import 'package:ThinQ/pages/micro_routine_page.dart';
-import 'package:ThinQ/pages/learning_hub_page.dart';
-import 'package:ThinQ/widgets/post_widget.dart';
+import 'package:ThinQ/pages/character_selection_page.dart';
+import 'package:ThinQ/pages/character_customization_page.dart';
+import 'package:ThinQ/pages/thinq_hub_page.dart';
+import 'package:ThinQ/pages/premium_subscription_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -27,14 +22,44 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   List<Task> _tasks = [];
-  List<String?> _activeUsers = [];
-  int _currentIndex = 1; // 관리 탭 선택 상태
+  List<String> _activeUsers = [];
+  int _currentIndex = 1;
   int _totalMinutes = 0;
   bool _isPremium = false;
   bool _isLoading = true;
   
-  // 선택된 서비스 인덱스
-  int _selectedServiceIndex = 0;
+  // 서비스 분류
+  String _selectedCategory = 'character';
+  
+  // 서비스 목록 정의 - const로 선언하여 불필요한 재생성 방지
+  final List<Map<String, dynamic>> _characterServices = [
+    {
+      'title': 'AI 캐릭터 채팅',
+      'description': 'MBTI 기반 페르소나가 있는 AI 캐릭터와 채팅하고 할일 피드백과 추천을 받으세요.',
+      'icon': Icons.chat,
+      'color': Colors.purple,
+      'isPremium': false,
+    },
+    {
+      'title': '캐릭터 커스터마이징',
+      'description': '당신만의 AI 캐릭터를 의상, 액세서리, 배경으로 꾸미고 커스터마이징 해보세요.',
+      'icon': Icons.style,
+      'color': Colors.blue,
+      'customAction': true,
+      'isPremium': false,
+      'premiumFeatures': true,
+    },
+  ];
+  
+  final List<Map<String, dynamic>> _hubServices = [
+    {
+      'title': 'LG ThinQ 허브',
+      'description': 'LG ThinQ 기기를 관리하고 원격으로 제어하는 스마트 허브입니다.',
+      'icon': Icons.home,
+      'color': Colors.green,
+      'isPremium': false,
+    }
+  ];
 
   @override
   void initState() {
@@ -42,7 +67,6 @@ class _HomePageState extends State<HomePage> {
     _initializeData();
   }
 
-  // 데이터 초기화 및 로드를 위한 메서드
   Future<void> _initializeData() async {
     if (!mounted) return;
     
@@ -51,24 +75,23 @@ class _HomePageState extends State<HomePage> {
     });
     
     try {
-      // 데이터 로딩 작업을 병렬로 처리
       await Future.wait([
         _loadTasks(),
         _loadUserStatus(),
       ]);
       
-      // 스트림 리스너 설정
       _setupActiveUsersListener();
       
-      // 로딩 완료
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
       }
       
-      // 공지사항은 별도로 로드 (UI를 차단하지 않음)
-      _loadNotice();
+      // 로딩 완료 후 비동기적으로 공지사항 로드
+      if (mounted) {
+        _loadNotice();
+      }
     } catch (e) {
       print('데이터 로드 중 오류 발생: $e');
       if (mounted) {
@@ -85,36 +108,11 @@ class _HomePageState extends State<HomePage> {
       appBar: _buildAppBar(),
       backgroundColor: const Color(0xFFF1F2F3),
       body: _isLoading 
-          ? _buildLoadingView() 
-          : _buildServicesPage(),
+          ? const Center(child: CircularProgressIndicator())
+          : _buildBody(),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) {
-          if (index != _currentIndex) {
-            switch (index) {
-              case 0: // 내역 페이지
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => FeedPage()),
-                  (route) => false,
-                );
-                break;
-              case 1: // 관리 (현재 페이지)
-                break;
-              case 2: // 커뮤니티 페이지
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => CommunityPage()),
-                  (route) => false,
-                );
-                break;
-              case 3: // 통계 페이지
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => StatsPage()),
-                  (route) => false,
-                );
-                break;
-            }
-          }
-        },
+        onTap: _handleNavigationTap,
         selectedItemColor: Theme.of(context).colorScheme.primary,
         unselectedItemColor: Colors.grey,
         type: BottomNavigationBarType.fixed,
@@ -128,112 +126,278 @@ class _HomePageState extends State<HomePage> {
             label: '관리',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.people),
-            label: '커뮤니티',
-          ),
-          BottomNavigationBarItem(
             icon: Icon(Icons.analytics),
             label: '통계',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: '설정',
           ),
         ],
       ),
     );
   }
 
-  Widget _buildServicesPage() {
-    final primaryColor = Theme.of(context).colorScheme.primary;
+  void _handleNavigationTap(int index) {
+    if (index == 3) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const SettingPage(),
+        ),
+      ).then((_) {
+        if (mounted) {
+          setState(() {
+            _currentIndex = 1;
+          });
+        }
+      });
+    } else {
+      setState(() {
+        _currentIndex = index;
+      });
+    }
+  }
+
+  void _navigateToServicePage(Map<String, dynamic> service) {
+    if (service['isPremium'] == true && !_isPremium) {
+      _showPremiumDialog();
+      return;
+    }
     
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
+    if (service['customAction'] == true) {
+      _navigateToCustomization();
+    } else if (service['title'] == 'AI 캐릭터 채팅') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CharacterSelectionPage(isPremium: _isPremium),
+        ),
+      );
+    } else if (service['title'] == 'LG ThinQ 허브') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ThinQHubPage(),
+        ),
+      );
+    }
+    
+    FirebaseAnalytics.instance.logEvent(
+      name: 'service_opened',
+      parameters: {
+        'service_name': service['title'],
+      },
+    );
+  }
+
+  Widget _buildBody() {
+    switch (_currentIndex) {
+      case 0:
+        return const Center(child: Text('내역 페이지 (준비 중)'));
+      case 1:
+        return _buildManagementPage();
+      case 2:
+        return const Center(child: Text('통계 페이지 (준비 중)'));
+      default:
+        return _buildManagementPage();
+    }
+  }
+  
+  Widget _buildManagementPage() {
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Column(
             children: [
-              Text(
-                '오늘의 집중 시간',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    const Text(
+                      '오늘의 집중 시간',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                  ],
                 ),
               ),
-              Spacer(),
+              Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16.0),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _buildStatItem('${_totalMinutes ~/ 60}분', '총 시간', Theme.of(context).colorScheme.primary),
+                      _buildStatItem('${_tasks.where((t) => t.isCompleted).length}개', '완료한 작업', Theme.of(context).colorScheme.primary),
+                      _buildStatItem('${_tasks.where((t) => !t.isCompleted).length}개', '진행 중', Theme.of(context).colorScheme.primary),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    _buildCategoryButton('캐릭터', 'character'),
+                    const SizedBox(width: 16),
+                    _buildCategoryButton('허브', 'hub'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
           ),
         ),
-        Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16.0),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem('${_totalMinutes ~/ 60}분', '총 시간', primaryColor),
-                _buildStatItem('${_tasks.where((t) => t.isCompleted).length}개', '완료한 작업', primaryColor),
-                _buildStatItem('${_tasks.where((t) => !t.isCompleted).length}개', '진행 중', primaryColor),
-              ],
-            ),
-          ),
-        ),
-        SizedBox(height: 24),
-        Padding(
+        SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '서비스',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ),
-        SizedBox(height: 8),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: GridView.count(
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 0.85,
-              children: [
-                _buildServiceItem('루틴 부스터', Icons.trending_up, Colors.blue, () {
-                  Navigator.push(
-                    context, 
-                    MaterialPageRoute(builder: (context) => RoutineBoosterPage())
-                  );
-                }),
-                _buildServiceItem('매크로 라이프 트리', Icons.account_tree, Colors.green, () {
-                  Navigator.push(
-                    context, 
-                    MaterialPageRoute(builder: (context) => LifeTreePage())
-                  );
-                }),
-                _buildServiceItem('마이크로 루틴 인젝터', Icons.timer, Colors.orange, () {
-                  Navigator.push(
-                    context, 
-                    MaterialPageRoute(builder: (context) => MicroRoutinePage())
-                  );
-                }),
-                _buildServiceItem('AI‑큐레이션 학습 허브', Icons.school, Colors.purple, () {
-                  Navigator.push(
-                    context, 
-                    MaterialPageRoute(builder: (context) => LearningHubPage())
-                  );
-                }),
-              ],
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.0,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final List<Map<String, dynamic>> services = 
+                    _selectedCategory == 'character' ? _characterServices : _hubServices;
+                
+                if (index >= services.length) return null;
+                final service = services[index];
+                
+                final bool requiresPremium = service['isPremium'] == true;
+                final bool hasPremiumFeatures = service['premiumFeatures'] == true;
+                
+                return _buildServiceCard(service, requiresPremium, hasPremiumFeatures);
+              },
+              childCount: _selectedCategory == 'character' 
+                  ? _characterServices.length 
+                  : _hubServices.length,
             ),
           ),
         ),
       ],
     );
   }
+
+  Widget _buildServiceCard(Map<String, dynamic> service, bool requiresPremium, bool hasPremiumFeatures) {
+    return GestureDetector(
+      onTap: () => _navigateToServicePage(service),
+      child: Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: service['color'].withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      service['icon'],
+                      color: service['color'],
+                      size: 22,
+                    ),
+                  ),
+                  if (requiresPremium && !_isPremium)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 6.0),
+                      child: Icon(
+                        Icons.workspace_premium,
+                        color: Colors.amber,
+                        size: 14,
+                      ),
+                    ),
+                  if (hasPremiumFeatures)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 6.0),
+                      child: Icon(
+                        Icons.star,
+                        color: Colors.amber,
+                        size: 14,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                service['title'],
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Expanded(
+                child: Text(
+                  service['description'],
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[600],
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (hasPremiumFeatures)
+                const Text(
+                  '프리미엄 기능 포함',
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: Colors.amber,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryButton(String title, String category) {
+    final isSelected = _selectedCategory == category;
+    return Expanded(
+      child: ElevatedButton(
+        onPressed: () {
+          setState(() {
+            _selectedCategory = category;
+          });
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isSelected 
+              ? Theme.of(context).colorScheme.primary 
+              : Colors.grey[200],
+          foregroundColor: isSelected 
+              ? Colors.white 
+              : Colors.grey[800],
+          elevation: isSelected ? 2 : 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        child: Text(title),
+      ),
+    );
+  }
   
-  // 통계 항목 위젯
   Widget _buildStatItem(String value, String label, Color primaryColor) {
     return Column(
       children: [
@@ -255,84 +419,22 @@ class _HomePageState extends State<HomePage> {
       ],
     );
   }
-  
-  Widget _buildServiceItem(String title, IconData icon, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Card(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: color.withOpacity(0.2),
-                child: Icon(
-                  icon,
-                  color: color,
-                  size: 26,
-                ),
-              ),
-              SizedBox(height: 12),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-  
-  // 로딩 화면 위젯
-  Widget _buildLoadingView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text(
-            '데이터를 불러오는 중입니다...',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey[600],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  // 활동 중인 사용자 목록을 위한 리스너 설정
   void _setupActiveUsersListener() {
     FirebaseDatabase.instance.ref().child('active_users').onValue.listen(
       (event) {
         if (mounted) {
+          final dynamic data = event.snapshot.value;
           setState(() {
-            _activeUsers = event.snapshot.value == null
-                ? []
-                : List<String?>.from(
-                    event.snapshot.value as List<dynamic>,
-                  );
+            _activeUsers = data == null ? [] : List<String>.from(data);
           });
         }
       },
     );
   }
 
-  // 사용자 태스크 로드 함수
   Future<void> _loadTasks() async {
     try {
-      // FirebaseFirestore로부터 데이터를 받아옵니다.
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
       
@@ -341,10 +443,10 @@ class _HomePageState extends State<HomePage> {
           .where("uid", isEqualTo: user.uid)
           .orderBy("createdAt", descending: true)
           .get();
+      
+      if (!mounted) return;
           
       final documents = snapshot.docs;
-
-      // FirebaseFirestore로부터 받아온 데이터를 Task 객체로 변환합니다.
       List<Task> tasks = [];
       int totalMinutes = 0;
 
@@ -375,7 +477,6 @@ class _HomePageState extends State<HomePage> {
         );
       }
 
-      // Task 객체를 이용하여 화면을 다시 그립니다.
       if (mounted) {
         setState(() {
           _tasks = tasks;
@@ -388,10 +489,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   AppBar _buildAppBar() {
-    final showPremiumBadge = _isPremium;
-    final currentUser = FirebaseAuth.instance.currentUser;
-    final username = currentUser?.displayName ?? '사용자';
-
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
@@ -405,7 +502,7 @@ class _HomePageState extends State<HomePage> {
       ),
       centerTitle: true,
       actions: [
-        if (showPremiumBadge) 
+        if (_isPremium)
           Container(
             margin: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -413,7 +510,7 @@ class _HomePageState extends State<HomePage> {
               color: Colors.amber,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Text(
+            child: const Text(
               'PREMIUM',
               style: TextStyle(
                 color: Colors.black87,
@@ -422,28 +519,10 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
-        IconButton(
-          icon: Icon(
-            Icons.settings,
-            color: Colors.black87,
-          ),
-          onPressed: () {
-            // 설정 페이지로 이동
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) {
-                  return const SettingPage();
-                },
-              ),
-            );
-          },
-        ),
       ],
     );
   }
 
-  // 사용자 상태 정보 로드 (프리미엄 여부 등)
   Future<void> _loadUserStatus() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -454,9 +533,9 @@ class _HomePageState extends State<HomePage> {
           .doc(user.uid)
           .get();
 
-      if (doc.exists) {
+      if (doc.exists && mounted) {
         final data = doc.data();
-        if (data != null && mounted) {
+        if (data != null) {
           setState(() {
             _isPremium = data['isPremium'] ?? false;
           });
@@ -467,42 +546,133 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // 공지사항을 받아옵니다.
   Future<void> _loadNotice() async {
-    final notice = FirebaseRemoteConfig.instance.getString('notice');
-    if (notice.isEmpty || !mounted) {
-      return;
-    }
-    showDialog(
-      context: context,
-      builder: (context) {
-        return CupertinoAlertDialog(
-          title: const Text('공지사항'),
-          content: Container(
-            margin: const EdgeInsets.only(top: 10),
-            child: Text(notice),
-          ),
-          actions: [
-            CupertinoButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text(
-                '확인',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
+    try {
+      final notice = FirebaseRemoteConfig.instance.getString('notice');
+      if (notice.isEmpty || !mounted) {
+        return;
+      }
+      
+      showDialog(
+        context: context,
+        builder: (context) {
+          return CupertinoAlertDialog(
+            title: const Text('공지사항'),
+            content: Container(
+              margin: const EdgeInsets.only(top: 10),
+              child: Text(notice),
+            ),
+            actions: [
+              CupertinoButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text(
+                  '확인',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      print('공지사항 로딩 오류: $e');
+    }
+  }
+
+  void _showPremiumDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('프리미엄 기능'),
+        content: const Text('이 기능은 프리미엄 사용자만 이용할 수 있습니다. 프리미엄으로 업그레이드하시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PremiumSubscriptionPage(),
+                ),
+              ).then((isPremium) {
+                if (isPremium == true && mounted) {
+                  _loadUserStatus();
+                }
+              });
+              
+              FirebaseAnalytics.instance.logEvent(
+                name: 'premium_conversion_started',
+              );
+            },
+            child: const Text('업그레이드'),
+          ),
+        ],
+      ),
     );
   }
-  
-  @override
-  void dispose() {
-    super.dispose();
+
+  void _navigateToCustomization() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+      
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('로그인이 필요합니다');
+      }
+      
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('characters')
+          .limit(1)
+          .get();
+      
+      if (!mounted) return;
+      
+      Character character;
+      
+      if (snapshot.docs.isNotEmpty) {
+        final data = snapshot.docs.first.data();
+        character = Character.fromMap(data, snapshot.docs.first.id);
+      } else {
+        character = Character.getDefaultCharacter();
+      }
+      
+      setState(() {
+        _isLoading = false;
+      });
+      
+      Navigator.push(
+        context, 
+        MaterialPageRoute(
+          builder: (context) => CharacterCustomizationPage(character: character),
+        ),
+      );
+    } catch (e) {
+      print('캐릭터 정보 로드 중 오류 발생: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('캐릭터 정보를 로드하는 중 오류가 발생했습니다'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 } 
