@@ -12,6 +12,7 @@ import 'package:ThinQ/pages/character_selection_page.dart';
 import 'package:ThinQ/pages/character_customization_page.dart';
 import 'package:ThinQ/pages/thinq_hub_page.dart';
 import 'package:ThinQ/pages/premium_subscription_page.dart';
+import 'package:ThinQ/pages/task_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -194,7 +195,7 @@ class _HomePageState extends State<HomePage> {
   Widget _buildBody() {
     switch (_currentIndex) {
       case 0:
-        return const Center(child: Text('내역 페이지 (준비 중)'));
+        return const TaskPage();
       case 1:
         return _buildManagementPage();
       case 2:

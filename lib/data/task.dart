@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class Task {
   final String id;
   final String uid;
@@ -6,6 +8,7 @@ class Task {
   final int duration;
   final bool isCompleted;
   final dynamic createdAt;
+  final DateTime? date;
 
   Task({
     required this.id,
@@ -15,6 +18,7 @@ class Task {
     required this.duration,
     required this.isCompleted,
     required this.createdAt,
+    this.date,
   });
 
   Task copyWith({
@@ -25,6 +29,7 @@ class Task {
     int? duration,
     bool? isCompleted,
     dynamic createdAt,
+    DateTime? date,
   }) {
     return Task(
       id: id ?? this.id,
@@ -34,6 +39,7 @@ class Task {
       duration: duration ?? this.duration,
       isCompleted: isCompleted ?? this.isCompleted,
       createdAt: createdAt ?? this.createdAt,
+      date: date ?? this.date,
     );
   }
 
@@ -45,6 +51,7 @@ class Task {
       'duration': duration,
       'isCompleted': isCompleted,
       'createdAt': createdAt,
+      'date': date != null ? Timestamp.fromDate(date!) : null,
     };
   }
 
@@ -57,6 +64,12 @@ class Task {
       duration: map['duration'] ?? 0,
       isCompleted: map['isCompleted'] ?? false,
       createdAt: map['createdAt'],
+      date: map['date'] != null ? (map['date'] as Timestamp).toDate() : null,
     );
+  }
+  
+  factory Task.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return Task.fromMap(data, doc.id);
   }
 } 

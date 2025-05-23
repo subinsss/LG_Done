@@ -225,10 +225,35 @@ class _SignUpPageState extends State<SignUpPage> {
       );
     } catch (e) {
       // 오류 처리
-      print(e);
+      print('회원가입 오류 상세: $e');
+      String errorMessage = '회원가입에 실패했습니다. 다시 시도해주세요.';
+      
+      if (e is FirebaseAuthException) {
+        // Firebase Auth 오류 코드에 따른 메시지
+        switch (e.code) {
+          case 'email-already-in-use':
+            errorMessage = '이미 사용 중인 이메일입니다.';
+            break;
+          case 'invalid-email':
+            errorMessage = '올바른 이메일 형식이 아닙니다.';
+            break;
+          case 'weak-password':
+            errorMessage = '비밀번호가 너무 약합니다. 6자 이상으로 설정해주세요.';
+            break;
+          case 'operation-not-allowed':
+            errorMessage = '이메일/비밀번호 계정이 비활성화되어 있습니다.';
+            break;
+          default:
+            errorMessage = '오류: ${e.message}';
+        }
+      } else if (e is String) {
+        errorMessage = e;
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e is String ? e : '회원가입에 실패했습니다. 다시 시도해주세요.'),
+          content: Text(errorMessage),
+          duration: const Duration(seconds: 5),
         ),
       );
     } finally {
