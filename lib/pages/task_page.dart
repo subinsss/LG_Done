@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
+import 'package:ThinQ/data/task.dart';
 
 class TaskItem {
   final String title;
@@ -19,7 +20,9 @@ class TaskItem {
 }
 
 class TaskPage extends StatefulWidget {
-  const TaskPage({super.key});
+  final Task? task;
+
+  const TaskPage({super.key, this.task});
 
   @override
   State<TaskPage> createState() => _TaskPageState();
@@ -43,6 +46,20 @@ class _TaskPageState extends State<TaskPage> {
   
   // 입력폼 표시 여부
   bool _showForm = false;
+
+  @override
+  void initState() {
+    super.initState();
+    
+    // 전달받은 Task가 있으면 폼 초기화
+    if (widget.task != null) {
+      _titleController.text = widget.task!.title;
+      if (widget.task!.description.isNotEmpty) {
+        _descriptionController.text = widget.task!.description;
+      }
+      _showForm = true;
+    }
+  }
 
   @override
   void dispose() {

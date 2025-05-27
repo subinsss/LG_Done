@@ -92,10 +92,6 @@ class CharacterAIService {
           tasksJson = jsonDecode('[$jsonString]');
         }
         
-        if (tasksJson is! List) {
-          tasksJson = [tasksJson];
-        }
-        
         // Task 객체로 변환
         final recommendedTasks = tasksJson.map((taskData) {
           return Task(
