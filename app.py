@@ -31,5 +31,9 @@ def get_data():
 @app.route("/esp-titles", methods=["GET"])
 def get_titles():
     docs = db.collection("todos").stream()
-    titles = [doc.to_dict().get("title", "") for doc in docs if "title" in doc.to_dict()]
+    titles = []
+    for doc in docs:
+        data = doc.to_dict()
+        if "deleted" not in data and "title" in data:
+            titles.append(data["title"])
     return jsonify(titles), 200
