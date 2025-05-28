@@ -30,6 +30,6 @@ def get_data():
 
 @app.route("/esp-titles", methods=["GET"])
 def get_titles():
-    docs = db.collection("esp_titles").stream()
-    titles = [doc.to_dict().get("title", "") for doc in docs]
+    docs = db.collection("todos").stream()
+    titles = [doc.to_dict().get("title", "") for doc in docs if "title" in doc.to_dict()]
     return jsonify(titles), 200
