@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../services/hardware_service.dart';
+import '../services/firestore_todo_service.dart';
+import '../services/external_server_service.dart';
 import '../widgets/local_ml_widget.dart';
 
 class SimpleHomePage extends StatefulWidget {
@@ -11,56 +13,146 @@ class SimpleHomePage extends StatefulWidget {
 }
 
 class _SimpleHomePageState extends State<SimpleHomePage> {
-  // 할일 목록
-  final List<TodoItem> _todos = [
-    TodoItem(title: '프로젝트 회의 참석', isCompleted: false, priority: 'high'),
-    TodoItem(title: '운동하기', isCompleted: true, priority: 'medium'),
-    TodoItem(title: 'Flutter 공부', isCompleted: false, priority: 'high'),
-    TodoItem(title: '독서 1시간', isCompleted: false, priority: 'low'),
-  ];
+  // Firestore 서비스
+  final FirestoreTodoService _firestoreService = FirestoreTodoService();
+  
+  // 할일 목록 (Firestore에서 실시간으로 받아옴)
+  List<TodoItem> _todos = [];
+  StreamSubscription<List<TodoItem>>? _todosSubscription;
 
   // 할일 추가 컨트롤러
   final TextEditingController _todoController = TextEditingController();
   String _selectedPriority = 'medium';
 
   @override
+  void initState() {
+    super.initState();
+    _listenToTodos();
+    _testServerConnection();
+  }
+
+  // 서버 연결 테스트
+  void _testServerConnection() async {
+    final isConnected = await ExternalServerService.testConnection();
+    if (isConnected) {
+      print('🎉 외부 서버 연결 성공!');
+    } else {
+      print('⚠️ 외부 서버 연결 실패');
+    }
+  }
+
+  @override
   void dispose() {
     _todoController.dispose();
+    _todosSubscription?.cancel();
     super.dispose();
   }
 
-  // 할일 토글
-  void _toggleTodo(int index) {
-    setState(() {
-      _todos[index] = TodoItem(
-        title: _todos[index].title,
-        isCompleted: !_todos[index].isCompleted,
-        priority: _todos[index].priority,
+  // Firestore에서 할일 목록 실시간 구독
+  void _listenToTodos() {
+    _todosSubscription = _firestoreService.getTodosStream().listen(
+      (todos) {
+        setState(() {
+          _todos = todos;
+        });
+      },
+      onError: (error) {
+        print('❌ 할일 목록 구독 오류: $error');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('할일 목록을 불러오는데 실패했습니다: $error')),
+        );
+      },
+    );
+  }
+
+  // 할일 토글 (Firestore 업데이트)
+  Future<void> _toggleTodo(TodoItem todo) async {
+    final success = await _firestoreService.toggleTodoCompletion(
+      todo.id, 
+      !todo.isCompleted
+    );
+    
+    if (success) {
+      // Firestore 성공 시 외부 서버에도 알림
+      final updatedTodo = TodoItem(
+        id: todo.id,
+        title: todo.title,
+        description: todo.description,
+        isCompleted: !todo.isCompleted,
+        priority: todo.priority,
+        estimatedMinutes: todo.estimatedMinutes,
+        createdAt: todo.createdAt,
+        updatedAt: DateTime.now(),
+        completedAt: !todo.isCompleted ? DateTime.now() : null,
+        userId: todo.userId,
       );
-    });
+      _notifyExternalServerUpdate(updatedTodo);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('할일 상태 변경에 실패했습니다')),
+      );
+    }
   }
 
-  // 할일 삭제
-  void _deleteTodo(int index) {
-    setState(() {
-      _todos.removeAt(index);
-    });
+  // 할일 삭제 (Firestore에서 삭제)
+  Future<void> _deleteTodo(TodoItem todo) async {
+    print('🗑️ 삭제 요청: ${todo.title} (ID: ${todo.id})');
+    
+    final success = await _firestoreService.deleteTodo(todo.id);
+    
+    if (success) {
+      print('✅ Firestore 삭제 성공: ${todo.id}');
+      // Firestore 성공 시 외부 서버에도 알림 (한 번만)
+      _notifyExternalServerDelete(todo.id, todo.title);
+    } else {
+      print('❌ Firestore 삭제 실패: ${todo.id}');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('할일 삭제에 실패했습니다')),
+      );
+    }
   }
 
-  // 할일 추가
-  void _addTodo() {
+  // 할일 추가 (Firestore에 추가)
+  Future<void> _addTodo() async {
     if (_todoController.text.trim().isEmpty) return;
     
-    setState(() {
-      _todos.add(TodoItem(
-        title: _todoController.text.trim(),
-        isCompleted: false,
-        priority: _selectedPriority,
-      ));
-    });
+    final todoId = await _firestoreService.addTodo(
+      title: _todoController.text.trim(),
+      priority: _selectedPriority,
+    );
     
-    _todoController.clear();
-    Navigator.of(context).pop();
+    if (todoId != null) {
+      // Firestore 성공 시 외부 서버에도 알림 (실패해도 무시)
+      _notifyExternalServer('create', _todoController.text.trim());
+      
+      _todoController.clear();
+      Navigator.of(context).pop();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('할일 추가에 실패했습니다')),
+      );
+    }
+  }
+
+  // 외부 서버 알림 (오류 무시)
+  void _notifyExternalServer(String action, String data) {
+    ExternalServerService.notifyServerSimple(action, data).catchError((error) {
+      print('📤 외부 서버 알림 실패 (무시됨): $error');
+    });
+  }
+
+  // 외부 서버 업데이트 알림
+  void _notifyExternalServerUpdate(TodoItem todo) {
+    ExternalServerService.sendTodoUpdate(todo).catchError((error) {
+      print('📤 외부 서버 업데이트 알림 실패 (무시됨): $error');
+    });
+  }
+
+  // 외부 서버 삭제 알림
+  void _notifyExternalServerDelete(String todoId, String title) {
+    ExternalServerService.sendTodoDelete(todoId, title).catchError((error) {
+      print('📤 외부 서버 삭제 알림 실패 (무시됨): $error');
+    });
   }
 
   // 할일 추가 다이얼로그
@@ -139,43 +231,51 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       statusText = '새로운 하루!';
     }
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.pink.withOpacity(0.1),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Text(
-            characterEmoji,
-            style: const TextStyle(fontSize: 80),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            statusText,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.pink.shade600,
+    return Center(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.pink.withOpacity(0.1),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '완료율: ${(completionRate * 100).toInt()}%',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade600,
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              characterEmoji,
+              style: const TextStyle(fontSize: 80),
+              textAlign: TextAlign.center,
             ),
-          ),
-        ],
+            const SizedBox(height: 10),
+            Text(
+              statusText,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.pink.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '완료율: ${(completionRate * 100).toInt()}%',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -201,43 +301,21 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '📊 오늘의 성과',
+          Text(
+            '오늘의 할일',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: Colors.black87,
+              color: Colors.pink.shade600,
             ),
           ),
           const SizedBox(height: 15),
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              Expanded(
-                child: _buildStatCard(
-                  '전체 할일',
-                  totalTodos.toString(),
-                  Colors.blue.shade400,
-                  Icons.list_alt,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatCard(
-                  '완료',
-                  completedTodos.toString(),
-                  Colors.green.shade400,
-                  Icons.check_circle,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildStatCard(
-                  '남은 할일',
-                  pendingTodos.toString(),
-                  Colors.orange.shade400,
-                  Icons.pending,
-                ),
-              ),
+              _buildStatItem('전체', totalTodos, Colors.blue),
+              _buildStatItem('완료', completedTodos, Colors.green),
+              _buildStatItem('대기', pendingTodos, Colors.orange),
             ],
           ),
         ],
@@ -245,288 +323,347 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     );
   }
 
-  Widget _buildStatCard(String title, String value, Color color, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: color.withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
-          Text(
-            value,
+  Widget _buildStatItem(String label, int count, Color color) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            count.toString(),
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
               color: color,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-            ),
-            textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade600,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _buildTodoManagement() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.pink.withOpacity(0.1),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                '✅ 할일 관리',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
+  Widget _buildTodoList() {
+    if (_todos.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.task_alt,
+              size: 64,
+              color: Colors.grey.shade300,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '할일이 없습니다',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.grey.shade500,
+                fontWeight: FontWeight.w500,
               ),
-              ElevatedButton.icon(
-                onPressed: _showAddTodoDialog,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('추가'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.pink.shade400,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '새로운 할일을 추가해보세요!',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _todos.length,
+      itemBuilder: (context, index) {
+        final todo = _todos[index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.pink.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
-          const SizedBox(height: 15),
-          if (_todos.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(20),
-              child: Center(
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.task_alt,
-                      size: 48,
-                      color: Colors.grey.shade400,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '아직 할일이 없어요!\n새로운 할일을 추가해보세요.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _todos.length,
-              itemBuilder: (context, index) {
-                final todo = _todos[index];
-                return _buildTodoItem(todo, index);
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTodoItem(TodoItem todo, int index) {
-    Color priorityColor;
-    switch (todo.priority) {
-      case 'high':
-        priorityColor = Colors.red.shade400;
-        break;
-      case 'medium':
-        priorityColor = Colors.orange.shade400;
-        break;
-      case 'low':
-        priorityColor = Colors.green.shade400;
-        break;
-      default:
-        priorityColor = Colors.grey.shade400;
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: todo.isCompleted ? Colors.grey.shade50 : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: todo.isCompleted ? Colors.grey.shade200 : priorityColor.withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => _toggleTodo(index),
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: todo.isCompleted ? Colors.green.shade400 : Colors.transparent,
-                border: Border.all(
-                  color: todo.isCompleted ? Colors.green.shade400 : Colors.grey.shade400,
-                  width: 2,
-                ),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: todo.isCompleted
-                  ? const Icon(
-                      Icons.check,
-                      color: Colors.white,
-                      size: 16,
-                    )
-                  : null,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  todo.title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: todo.isCompleted ? Colors.grey.shade500 : Colors.black87,
-                    decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            leading: GestureDetector(
+              onTap: () => _toggleTodo(todo),
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: todo.isCompleted ? Colors.green : Colors.grey.shade300,
+                    width: 2,
                   ),
+                  color: todo.isCompleted ? Colors.green : Colors.transparent,
                 ),
-                const SizedBox(height: 4),
+                child: todo.isCompleted
+                    ? const Icon(Icons.check, color: Colors.white, size: 16)
+                    : null,
+              ),
+            ),
+            title: Text(
+              todo.title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
+                color: todo.isCompleted ? Colors.grey.shade500 : Colors.black87,
+              ),
+            ),
+            subtitle: Row(
+              children: [
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: priorityColor.withOpacity(0.1),
+                    color: _getPriorityColor(todo.priority).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    todo.priority == 'high' ? '높음' : todo.priority == 'medium' ? '보통' : '낮음',
+                    _getPriorityText(todo.priority),
                     style: TextStyle(
-                      fontSize: 10,
-                      color: priorityColor,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: _getPriorityColor(todo.priority),
+                      fontWeight: FontWeight.w500,
                     ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${todo.estimatedMinutes}분',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
                   ),
                 ),
               ],
             ),
-          ),
-          IconButton(
-            onPressed: () => _deleteTodo(index),
-            icon: Icon(
-              Icons.delete_outline,
-              color: Colors.red.shade400,
-              size: 20,
+            trailing: IconButton(
+              icon: Icon(Icons.delete_outline, color: Colors.grey.shade400),
+              onPressed: () => _deleteTodo(todo),
             ),
-            tooltip: '삭제',
           ),
-        ],
-      ),
+        );
+      },
     );
+  }
+
+  Color _getPriorityColor(String priority) {
+    switch (priority) {
+      case 'high':
+        return Colors.red;
+      case 'medium':
+        return Colors.orange;
+      case 'low':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getPriorityText(String priority) {
+    switch (priority) {
+      case 'high':
+        return '높음';
+      case 'medium':
+        return '보통';
+      case 'low':
+        return '낮음';
+      default:
+        return '보통';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    int completedCount = _todos.where((todo) => todo.isCompleted).length;
-    double completionRate = _todos.isEmpty ? 0 : completedCount / _todos.length;
-    
-    // 할일 데이터를 Map 형식으로 변환
-    List<Map<String, dynamic>> todosData = _todos.map((todo) => {
-      'title': todo.title,
-      'isCompleted': todo.isCompleted,
-      'priority': todo.priority,
-    }).toList();
-
     return Scaffold(
       backgroundColor: Colors.pink.shade50,
       appBar: AppBar(
         title: const Text(
-          '🌸 ThinQ 홈',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          '할일 관리',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         backgroundColor: Colors.pink.shade400,
-        foregroundColor: Colors.white,
         elevation: 0,
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 캐릭터 이미지
-            _buildCharacterImage(),
-            const SizedBox(height: 25),
+            Container(
+              width: double.infinity,
+              alignment: Alignment.center,
+              child: _buildCharacterImage(),
+            ),
+            const SizedBox(height: 20),
             
-            // 오늘의 성과
+            // 빠른 통계
             _buildQuickStats(),
-            const SizedBox(height: 25),
+            const SizedBox(height: 20),
             
-            // 할일 관리
-            _buildTodoManagement(),
-            const SizedBox(height: 25),
+            // 서버 연동 상태 및 설정
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.pink.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '외부 서버 연동',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.pink.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        ExternalServerService.isEnabled ? '활성화됨' : '비활성화됨',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: ExternalServerService.isEnabled ? Colors.green : Colors.grey.shade500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        ExternalServerService.isEnabled = !ExternalServerService.isEnabled;
+                      });
+                      if (ExternalServerService.isEnabled) {
+                        _testServerConnection();
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ExternalServerService.isEnabled ? Colors.red : Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    child: Text(ExternalServerService.isEnabled ? '비활성화' : '활성화'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
             
-            // 로컬 ML 위젯
+            // 할일 목록 제목
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '할일 목록',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.pink.shade600,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      '${_todos.length}개',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: _showAddTodoDialog,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('추가'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.pink.shade400,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // 할일 목록
+            _buildTodoList(),
+            
+            const SizedBox(height: 20),
+            
+            // ML 위젯
             LocalMLWidget(
-              todos: todosData,
-              completionRate: completionRate,
+              todos: _todos.map((todo) => {
+                'title': todo.title,
+                'isCompleted': todo.isCompleted,
+                'priority': todo.priority,
+              }).toList(),
+              completionRate: _todos.isEmpty ? 0 : _todos.where((todo) => todo.isCompleted).length / _todos.length,
               totalTodos: _todos.length,
-              completedTodos: completedCount,
-              studyTimeMinutes: 60, // 기본값
-              currentMood: completionRate > 0.7 ? 'happy' : completionRate > 0.4 ? 'working' : 'encouraging',
+              completedTodos: _todos.where((todo) => todo.isCompleted).length,
+              studyTimeMinutes: 60,
+              currentMood: _todos.isEmpty ? 'encouraging' : 
+                          (_todos.where((todo) => todo.isCompleted).length / _todos.length > 0.7 ? 'happy' : 
+                           _todos.where((todo) => todo.isCompleted).length / _todos.length > 0.4 ? 'working' : 'encouraging'),
             ),
           ],
         ),
       ),
+
     );
   }
 }
 
-class TodoItem {
-  final String title;
-  final bool isCompleted;
-  final String priority; // high, medium, low
-  
-  TodoItem({
-    required this.title, 
-    required this.isCompleted,
-    this.priority = 'medium',
-  });
-} 
+ 
 
