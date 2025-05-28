@@ -1,0 +1,4 @@
+flask==2.3.3
+firebase-admin==6.2.0
+requests==2.31.0
+google-cloud-firestore==2.11.1 

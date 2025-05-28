@@ -22,28 +22,54 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
 
   // 할일 추가 컨트롤러
   final TextEditingController _todoController = TextEditingController();
+  final TextEditingController _minutesController = TextEditingController();
   String _selectedPriority = 'medium';
+  DateTime _selectedDate = DateTime.now();
 
   @override
   void initState() {
     super.initState();
     _listenToTodos();
-    _testServerConnection();
+    // 서버 연동이 활성화된 경우에만 연결 테스트
+    if (ExternalServerService.isEnabled) {
+      Future.delayed(const Duration(seconds: 1), () {
+        _testServerConnection();
+      });
+    }
   }
 
   // 서버 연결 테스트
   void _testServerConnection() async {
+    print('🔍 서버 연결 테스트 시작...');
     final isConnected = await ExternalServerService.testConnection();
+    
+    setState(() {}); // UI 업데이트
+    
     if (isConnected) {
       print('🎉 외부 서버 연결 성공!');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('서버 연결 성공!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
     } else {
       print('⚠️ 외부 서버 연결 실패');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('서버 연결 실패'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 
   @override
   void dispose() {
     _todoController.dispose();
+    _minutesController.dispose();
     _todosSubscription?.cancel();
     super.dispose();
   }
@@ -72,22 +98,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       !todo.isCompleted
     );
     
-    if (success) {
-      // Firestore 성공 시 외부 서버에도 알림
-      final updatedTodo = TodoItem(
-        id: todo.id,
-        title: todo.title,
-        description: todo.description,
-        isCompleted: !todo.isCompleted,
-        priority: todo.priority,
-        estimatedMinutes: todo.estimatedMinutes,
-        createdAt: todo.createdAt,
-        updatedAt: DateTime.now(),
-        completedAt: !todo.isCompleted ? DateTime.now() : null,
-        userId: todo.userId,
-      );
-      _notifyExternalServerUpdate(updatedTodo);
-    } else {
+    if (!success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('할일 상태 변경에 실패했습니다')),
       );
@@ -102,8 +113,6 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     
     if (success) {
       print('✅ Firestore 삭제 성공: ${todo.id}');
-      // Firestore 성공 시 외부 서버에도 알림 (한 번만)
-      _notifyExternalServerDelete(todo.id, todo.title);
     } else {
       print('❌ Firestore 삭제 실패: ${todo.id}');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -116,29 +125,29 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   Future<void> _addTodo() async {
     if (_todoController.text.trim().isEmpty) return;
     
+    // 소요시간 파싱 (기본값 30분)
+    int estimatedMinutes = 30;
+    if (_minutesController.text.isNotEmpty) {
+      estimatedMinutes = int.tryParse(_minutesController.text) ?? 30;
+    }
+    
     final todoId = await _firestoreService.addTodo(
       title: _todoController.text.trim(),
       priority: _selectedPriority,
+      estimatedMinutes: estimatedMinutes,
+      dueDate: _selectedDate,
     );
     
     if (todoId != null) {
-      // Firestore 성공 시 외부 서버에도 알림 (실패해도 무시)
-      _notifyExternalServer('create', _todoController.text.trim());
-      
       _todoController.clear();
+      _minutesController.clear();
+      _selectedDate = DateTime.now(); // 날짜 초기화
       Navigator.of(context).pop();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('할일 추가에 실패했습니다')),
       );
     }
-  }
-
-  // 외부 서버 알림 (오류 무시)
-  void _notifyExternalServer(String action, String data) {
-    ExternalServerService.notifyServerSimple(action, data).catchError((error) {
-      print('📤 외부 서버 알림 실패 (무시됨): $error');
-    });
   }
 
   // 외부 서버 업데이트 알림
@@ -155,57 +164,128 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     });
   }
 
+  // 외부 서버 생성 알림
+  void _notifyExternalServerCreate(TodoItem todo) {
+    ExternalServerService.sendTodoCreate(todo).then((success) {
+      if (success) {
+        setState(() {}); // UI 업데이트를 위해 setState 호출
+      }
+    }).catchError((error) {
+      print('📤 외부 서버 생성 알림 실패 (무시됨): $error');
+    });
+  }
+
   // 할일 추가 다이얼로그
   void _showAddTodoDialog() {
+    // 다이얼로그 열 때마다 초기화
+    _selectedDate = DateTime.now();
+    _minutesController.text = '30'; // 기본값 30분
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('새 할일 추가'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _todoController,
-              decoration: const InputDecoration(
-                hintText: '할일을 입력하세요',
-                border: OutlineInputBorder(),
-              ),
-              autofocus: true,
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedPriority,
-              decoration: const InputDecoration(
-                labelText: '우선순위',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'high', child: Text('높음')),
-                DropdownMenuItem(value: 'medium', child: Text('보통')),
-                DropdownMenuItem(value: 'low', child: Text('낮음')),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('새 할일 추가'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 할일 제목 입력
+                TextField(
+                  controller: _todoController,
+                  decoration: const InputDecoration(
+                    hintText: '할일을 입력하세요',
+                    border: OutlineInputBorder(),
+                    labelText: '할일',
+                  ),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 16),
+                
+                // 소요시간 입력
+                TextField(
+                  controller: _minutesController,
+                  decoration: const InputDecoration(
+                    hintText: '30',
+                    border: OutlineInputBorder(),
+                    labelText: '예상 소요시간 (분)',
+                    suffixText: '분',
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 16),
+                
+                // 우선순위 선택
+                DropdownButtonFormField<String>(
+                  value: _selectedPriority,
+                  decoration: const InputDecoration(
+                    labelText: '우선순위',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'high', child: Text('높음')),
+                    DropdownMenuItem(value: 'medium', child: Text('보통')),
+                    DropdownMenuItem(value: 'low', child: Text('낮음')),
+                  ],
+                  onChanged: (value) {
+                    setDialogState(() {
+                      _selectedPriority = value!;
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+                
+                // 날짜 선택
+                InkWell(
+                  onTap: () async {
+                    final DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: _selectedDate,
+                      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null) {
+                      setDialogState(() {
+                        _selectedDate = picked;
+                      });
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '목표 날짜: ${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        const Icon(Icons.calendar_today),
+                      ],
+                    ),
+                  ),
+                ),
               ],
-              onChanged: (value) {
-                setState(() {
-                  _selectedPriority = value!;
-                });
-              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('취소'),
+            ),
+            ElevatedButton(
+              onPressed: _addTodo,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.pink.shade400,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('추가'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: _addTodo,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.pink.shade400,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('추가'),
-          ),
-        ],
       ),
     );
   }
@@ -353,6 +433,108 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     );
   }
 
+  Widget _buildServerStatus() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.pink.withOpacity(0.1),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '서버 연동 상태',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.pink.shade600,
+                ),
+              ),
+              Switch(
+                value: ExternalServerService.isEnabled,
+                onChanged: (value) {
+                  setState(() {
+                    ExternalServerService.isEnabled = value;
+                  });
+                  if (value) {
+                    _testServerConnection();
+                  }
+                },
+                activeColor: Colors.green,
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          Row(
+            children: [
+              Icon(
+                ExternalServerService.isEnabled 
+                  ? (ExternalServerService.lastConnectionSuccess ? Icons.cloud_done : Icons.cloud_off)
+                  : Icons.cloud_off,
+                color: ExternalServerService.isEnabled 
+                  ? (ExternalServerService.lastConnectionSuccess ? Colors.green : Colors.red)
+                  : Colors.grey,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  ExternalServerService.isEnabled 
+                    ? (ExternalServerService.lastConnectionSuccess ? '연결됨' : '연결 실패')
+                    : '비활성화',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: ExternalServerService.isEnabled 
+                      ? (ExternalServerService.lastConnectionSuccess ? Colors.green : Colors.red)
+                      : Colors.grey,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (ExternalServerService.lastConnectionAttempt != null)
+                Text(
+                  '${ExternalServerService.lastConnectionAttempt!.hour.toString().padLeft(2, '0')}:${ExternalServerService.lastConnectionAttempt!.minute.toString().padLeft(2, '0')}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _testServerConnection,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('연결 테스트'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade50,
+                    foregroundColor: Colors.blue.shade700,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTodoList() {
     if (_todos.isEmpty) {
       return Container(
@@ -463,6 +645,22 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                     color: Colors.grey.shade500,
                   ),
                 ),
+                if (todo.dueDate != null) ...[
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.calendar_today,
+                    size: 12,
+                    color: Colors.grey.shade500,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${todo.dueDate!.month}/${todo.dueDate!.day}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+                ],
               ],
             ),
             trailing: IconButton(
@@ -534,66 +732,8 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
             _buildQuickStats(),
             const SizedBox(height: 20),
             
-            // 서버 연동 상태 및 설정
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.pink.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '외부 서버 연동',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.pink.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        ExternalServerService.isEnabled ? '활성화됨' : '비활성화됨',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: ExternalServerService.isEnabled ? Colors.green : Colors.grey.shade500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        ExternalServerService.isEnabled = !ExternalServerService.isEnabled;
-                      });
-                      if (ExternalServerService.isEnabled) {
-                        _testServerConnection();
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ExternalServerService.isEnabled ? Colors.red : Colors.green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                    child: Text(ExternalServerService.isEnabled ? '비활성화' : '활성화'),
-                  ),
-                ],
-              ),
-            ),
+            // 서버 연동 상태
+            _buildServerStatus(),
             const SizedBox(height: 20),
             
             // 할일 목록 제목

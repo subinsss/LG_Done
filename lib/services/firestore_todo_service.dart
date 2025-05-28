@@ -1,13 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'external_server_service.dart';
 
 class TodoItem {
   final String id;
   final String title;
-  final String description;
   final bool isCompleted;
   final String priority;
   final int estimatedMinutes;
+  final DateTime? dueDate;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? completedAt;
@@ -16,10 +15,10 @@ class TodoItem {
   TodoItem({
     required this.id,
     required this.title,
-    this.description = '',
     required this.isCompleted,
     required this.priority,
     this.estimatedMinutes = 30,
+    this.dueDate,
     this.createdAt,
     this.updatedAt,
     this.completedAt,
@@ -31,10 +30,10 @@ class TodoItem {
     return TodoItem(
       id: doc.id,
       title: data['title'] ?? '',
-      description: data['description'] ?? '',
       isCompleted: data['isCompleted'] ?? false,
       priority: data['priority'] ?? 'medium',
       estimatedMinutes: data['estimatedMinutes'] ?? 30,
+      dueDate: data['dueDate']?.toDate(),
       createdAt: data['createdAt']?.toDate(),
       updatedAt: data['updatedAt']?.toDate(),
       completedAt: data['completedAt']?.toDate(),
@@ -45,10 +44,10 @@ class TodoItem {
   Map<String, dynamic> toFirestore() {
     return {
       'title': title,
-      'description': description,
       'isCompleted': isCompleted,
       'priority': priority,
       'estimatedMinutes': estimatedMinutes,
+      'dueDate': dueDate != null ? Timestamp.fromDate(dueDate!) : null,
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
       'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
@@ -62,43 +61,30 @@ class FirestoreTodoService {
   final String _collection = 'todos';
   final String _userId = 'anonymous'; // 로그인 없이 사용
 
-  // 할일 추가
+  // 할일 추가 - Firestore에 직접 저장
   Future<String?> addTodo({
     required String title,
-    String description = '',
     String priority = 'medium',
     int estimatedMinutes = 30,
+    DateTime? dueDate,
   }) async {
     try {
       final now = DateTime.now();
+      final defaultDueDate = dueDate ?? DateTime(now.year, now.month, now.day);
+      
       final docRef = await _firestore.collection(_collection).add({
         'title': title,
-        'description': description,
         'isCompleted': false,
         'priority': priority,
         'estimatedMinutes': estimatedMinutes,
+        'dueDate': Timestamp.fromDate(defaultDueDate),
         'createdAt': Timestamp.fromDate(now),
         'updatedAt': Timestamp.fromDate(now),
         'completedAt': null,
         'userId': _userId,
       });
       
-      print('✅ 할일 추가 성공: $title (ID: ${docRef.id})');
-      
-      // 서버에도 전송
-      final todo = TodoItem(
-        id: docRef.id,
-        title: title,
-        description: description,
-        isCompleted: false,
-        priority: priority,
-        estimatedMinutes: estimatedMinutes,
-        createdAt: now,
-        updatedAt: now,
-        userId: _userId,
-      );
-      ExternalServerService.sendTodoCreate(todo);
-      
+      print('✅ Firestore에 할일 추가 성공: $title (ID: ${docRef.id})');
       return docRef.id;
     } catch (e) {
       print('❌ 할일 추가 실패: $e');
@@ -148,35 +134,18 @@ class FirestoreTodoService {
     });
   }
 
-  // 할일 완료 상태 토글
+  // 할일 완료 상태 토글 - Firestore에 직접 업데이트
   Future<bool> toggleTodoCompletion(String todoId, bool isCompleted) async {
     try {
       final now = DateTime.now();
-      final updateData = {
+      
+      await _firestore.collection(_collection).doc(todoId).update({
         'isCompleted': isCompleted,
         'updatedAt': Timestamp.fromDate(now),
-      };
+        'completedAt': isCompleted ? Timestamp.fromDate(now) : null,
+      });
       
-      if (isCompleted) {
-        updateData['completedAt'] = Timestamp.fromDate(now);
-      } else {
-        updateData['completedAt'] = FieldValue.delete();
-      }
-      
-      await _firestore.collection(_collection).doc(todoId).update(updateData);
-      print('✅ 할일 상태 변경 성공: $todoId -> $isCompleted');
-      
-      // 업데이트된 할일 정보를 서버에 전송
-      try {
-        final doc = await _firestore.collection(_collection).doc(todoId).get();
-        if (doc.exists) {
-          final todo = TodoItem.fromFirestore(doc);
-          ExternalServerService.sendTodoUpdate(todo);
-        }
-      } catch (e) {
-        print('❌ 서버 전송 중 오류: $e');
-      }
-      
+      print('✅ Firestore에서 할일 상태 변경 성공: $todoId -> $isCompleted');
       return true;
     } catch (e) {
       print('❌ 할일 상태 변경 실패: $e');
@@ -184,23 +153,11 @@ class FirestoreTodoService {
     }
   }
 
-  // 할일 삭제
+  // 할일 삭제 - Firestore에서 직접 삭제
   Future<bool> deleteTodo(String todoId) async {
     try {
-      // 삭제 전에 할일 정보를 가져옴
-      final doc = await _firestore.collection(_collection).doc(todoId).get();
-      String title = '';
-      if (doc.exists) {
-        final data = doc.data() as Map<String, dynamic>;
-        title = data['title'] ?? '';
-      }
-      
       await _firestore.collection(_collection).doc(todoId).delete();
-      print('✅ 할일 삭제 성공: $todoId');
-      
-      // 서버에도 삭제 알림
-      ExternalServerService.sendTodoDelete(todoId, title);
-      
+      print('✅ Firestore에서 할일 삭제 성공: $todoId');
       return true;
     } catch (e) {
       print('❌ 할일 삭제 실패: $e');
