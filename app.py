@@ -21,3 +21,11 @@ def get_data():
     docs = db.collection("tasks").stream()
     data = [doc.to_dict() for doc in docs]
     return jsonify(data), 200
+
+
+@app.route("/esp-task", methods=["GET"])
+def get_latest_task():
+    docs = db.collection("tasks").order_by("createdAt", direction=firestore.Query.DESCENDING).limit(1).stream()
+    latest = [doc.to_dict() for doc in docs]
+    return jsonify(latest), 200
+
