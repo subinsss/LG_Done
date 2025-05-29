@@ -1,4 +1,4 @@
-// import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:math';
 
@@ -7,75 +7,173 @@ class StatisticsService {
   factory StatisticsService() => _instance;
   StatisticsService._internal();
 
-  static bool _isOfflineMode = true; // Firebase 없이 오프라인 모드로 작동
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Firebase 사용 가능 여부 확인 (항상 false 반환)
+  // Firebase 사용 가능 여부 확인
   Future<bool> _isFirebaseAvailable() async {
-    return false; // Firebase 비활성화
-  }
-
-  // 우선순위를 카테고리명으로 매핑
-  String _mapPriorityToCategory(String priority) {
-    switch (priority) {
-      case 'high':
-        return '프로젝트';
-      case 'medium':
-        return '공부';
-      case 'low':
-        return '운동';
-      default:
-        return '기타';
+    try {
+      // 간단한 연결 테스트
+      QuerySnapshot testSnapshot = await _firestore
+          .collection('todos')
+          .limit(1)
+          .get()
+          .timeout(const Duration(seconds: 5));
+      
+      print('✅ Firebase 연결 성공!');
+      return true;
+    } catch (e) {
+      print('❌ Firebase 연결 실패: $e');
+      return false;
     }
   }
 
-  // 실제 할일 데이터에서 일일 통계 생성 (로컬 버전)
-  Future<DailyStats> _generateDailyStatsFromTodos(DateTime date) async {
+  // 실제 할일 데이터에서 일일 통계 생성 (Firebase 전용)
+  Future<DailyStats> _getDailyStatsFromFirebase(DateTime date) async {
     try {
-      // 로컬 샘플 데이터 생성
-      final random = Random(date.millisecondsSinceEpoch);
+      String dateKey = DateFormat('yyyy-MM-dd').format(date);
+      print('🔄 Firebase에서 일일 통계 로드: $dateKey');
       
-      int totalTasks = 3 + random.nextInt(5); // 3-7개 할일
-      int completedTasks = random.nextInt(totalTasks + 1); // 0부터 totalTasks까지
-      int totalStudyTime = completedTasks * (20 + random.nextInt(40)); // 20-60분씩
+      // 1. 기존 통계 데이터 확인
+      DocumentSnapshot dailyDoc = await _firestore
+          .collection('statistics')
+          .doc('daily')
+          .collection('data')
+          .doc(dateKey)
+          .get();
       
-      Map<String, int> categoryTime = {};
+      // 2. 모든 todos 가져와서 클라이언트에서 필터링
+      QuerySnapshot todosSnapshot = await _firestore
+          .collection('todos')
+          .get();
       
-      // 카테고리별 시간 분배 - 한국어 카테고리명으로 직접 저장
-      if (completedTasks > 0) {
-        List<String> priorities = ['high', 'medium', 'low'];
-        for (String priority in priorities) {
-          int categoryTasks = random.nextInt(completedTasks + 1);
-          if (categoryTasks > 0) {
-            String categoryName = _mapPriorityToCategory(priority);
-            categoryTime[categoryName] = categoryTasks * (15 + random.nextInt(30));
-          }
+      print('📦 Firestore에서 받은 할일 개수: ${todosSnapshot.docs.length}');
+      
+      // 3. 클라이언트에서 날짜와 사용자 필터링 (수정됨)
+      DateTime startOfDay = DateTime(date.year, date.month, date.day);
+      DateTime endOfDay = startOfDay.add(Duration(days: 1));
+      
+      print('🗓️ 필터링 기준: ${dateKey}');
+      print('   시작: $startOfDay');
+      print('   종료: $endOfDay (미포함)');
+      
+      List<QueryDocumentSnapshot> filteredTodos = todosSnapshot.docs.where((doc) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        
+        // 사용자 확인
+        String userId = data['userId'] ?? '';
+        bool userMatch = userId == 'anonymous';
+        
+        // 날짜 확인 - dueDate 기준으로 해당 날짜에 속하는지 확인
+        Timestamp? dueDate = data['dueDate'] as Timestamp?;
+        bool dateMatch = false;
+        
+        if (dueDate != null) {
+          DateTime todoDate = dueDate.toDate();
+          // 수정: >= startOfDay && < endOfDay 로 변경 (해당 날짜 포함)
+          dateMatch = todoDate.isAtSameMomentAs(startOfDay) || 
+                     (todoDate.isAfter(startOfDay) && todoDate.isBefore(endOfDay));
+          
+          print('   📅 할일 "${data['title']}" (${data['category']})');
+          print('      dueDate: $todoDate');
+          print('      사용자: $userId, 날짜매치: $dateMatch, 완료: ${data['isCompleted']}');
         }
         
-        // 기타 카테고리도 추가
-        if (random.nextBool()) {
-          categoryTime['기타'] = random.nextInt(30) + 10;
+        bool shouldInclude = userMatch && dateMatch;
+        return shouldInclude;
+      }).toList();
+      
+      print('✅ 필터링된 할일 개수: ${filteredTodos.length}');
+      
+      // 4. todos 데이터에서 통계 계산 - isCompleted: true인 것만 카운팅 (기존 데이터와 합치지 않음)
+      int totalTasks = filteredTodos.length;
+      int completedTasks = 0;
+      int totalStudyTime = 0;
+      Map<String, int> categoryTime = {};
+      
+      // 완료된 할일과 미완료 할일 분리
+      List<QueryDocumentSnapshot> completedTodos = [];
+      List<QueryDocumentSnapshot> incompleteTodos = [];
+      
+      for (QueryDocumentSnapshot doc in filteredTodos) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        bool isCompleted = data['isCompleted'] ?? false;
+        
+        if (isCompleted) {
+          completedTodos.add(doc);
+        } else {
+          incompleteTodos.add(doc);
         }
       }
-
+      
+      print('📊 할일 분류: 총 ${totalTasks}개 (완료: ${completedTodos.length}개, 미완료: ${incompleteTodos.length}개)');
+      
+      // 완료된 할일만 통계에 포함
+      for (QueryDocumentSnapshot doc in completedTodos) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        
+        String category = data['category'] ?? '기타';
+        int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+        String title = data['title'] ?? '제목없음';
+        
+        print('✅ 완료된 할일: "$title" (${category}, ${estimatedMinutes}분)');
+        
+        completedTasks++;
+        totalStudyTime += estimatedMinutes;
+        categoryTime[category] = (categoryTime[category] ?? 0) + estimatedMinutes;
+      }
+      
+      // 미완료 할일은 로그만 출력 (통계에 포함하지 않음)
+      for (QueryDocumentSnapshot doc in incompleteTodos) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        String title = data['title'] ?? '제목없음';
+        String category = data['category'] ?? '기타';
+        int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+        
+        print('⏳ 미완료 할일: "$title" (${category}, ${estimatedMinutes}분) - 통계에서 제외');
+      }
+      
+      // 기존 statistics 데이터는 무시하고 순수 todos 데이터만 사용
+      List<String> achievements = _generateAchievements(completedTasks, totalStudyTime);
+      
+      print('📊 최종 통계 결과 (순수 todos 데이터): 완료 $completedTasks/$totalTasks, 총 시간 ${totalStudyTime}분');
+      print('   카테고리별: $categoryTime');
+      
+      // 6. Firebase에 새로운 통계 저장 (기존 데이터 덮어쓰기)
+      await _firestore
+          .collection('statistics')
+          .doc('daily')
+          .collection('data')
+          .doc(dateKey)
+          .set({
+        'date': date.toIso8601String(),
+        'studyTimeMinutes': totalStudyTime,
+        'completedTasks': completedTasks,
+        'totalTasks': totalTasks,
+        'categoryTime': categoryTime,
+        'achievements': achievements,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'dataSource': 'todos_only', // 순수 todos 데이터임을 표시
+      });
+      
       return DailyStats(
         date: date,
         studyTimeMinutes: totalStudyTime,
         completedTasks: completedTasks,
         totalTasks: totalTasks,
         categoryTime: categoryTime,
-        achievements: _generateAchievements(completedTasks, totalStudyTime),
+        achievements: achievements,
       );
+      
     } catch (e) {
-      print('❌ 일일 통계 생성 실패: $e');
+      print('❌ Firebase 일일 통계 로드 실패: $e');
       return DailyStats.empty(date);
     }
   }
 
-  // 성취 목록 생성 - 배지 시스템 추가
+  // 성취 목록 생성
   List<String> _generateAchievements(int completedTasks, int studyTime) {
     List<String> achievements = [];
     
-    // 일간 배지
     if (completedTasks >= 5) achievements.add('할일 마스터');
     if (studyTime >= 120) achievements.add('집중력 왕');
     if (completedTasks > 0 && studyTime > 0) achievements.add('꾸준함');
@@ -85,170 +183,296 @@ class StatisticsService {
     return achievements;
   }
 
-  // 일일 통계 데이터 저장 (로컬 버전 - 실제로는 저장하지 않음)
-  Future<bool> saveDailyStats(DailyStats stats) async {
-    try {
-      final dateKey = DateFormat('yyyy-MM-dd').format(stats.date);
-      print('✅ 일일 통계 저장 완료 (로컬): $dateKey');
-      return true;
-    } catch (e) {
-      print('❌ 일일 통계 저장 실패: $e');
-      return false;
+  // 일일 통계 데이터 가져오기 (Firebase 전용)
+  Future<DailyStats> getDailyStats(DateTime date) async {
+    if (await _isFirebaseAvailable()) {
+      return await _getDailyStatsFromFirebase(date);
+    } else {
+      print('🔌 Firebase 연결 없음 - 빈 데이터 반환');
+      return DailyStats.empty(date);
     }
   }
 
-  // 주간 통계 데이터 가져오기 (최근 7일)
+  // 주간 통계 데이터 가져오기 (Firebase 전용) - todos에서 직접 가져와서 isCompleted만 카운팅
   Future<List<DailyStats>> getWeeklyStats() async {
+    if (!await _isFirebaseAvailable()) {
+      print('🔌 Firebase 연결 없음 - 빈 주간 데이터 반환');
+      return [];
+    }
+
     try {
-      print('🔄 로컬 주간 통계 데이터 생성');
+      print('🔄 Firebase 주간 통계 데이터 로드 (todos에서 isCompleted만)');
+      
+      // todos 컬렉션에서 모든 데이터 가져오기
+      QuerySnapshot todosSnapshot = await _firestore
+          .collection('todos')
+          .get();
+      
+      print('📦 Firestore에서 받은 할일 개수: ${todosSnapshot.docs.length}');
       
       List<DailyStats> weeklyData = [];
       DateTime now = DateTime.now();
       
+      // 최근 7일간의 데이터 생성
       for (int i = 6; i >= 0; i--) {
         DateTime date = now.subtract(Duration(days: i));
-        DailyStats dailyStats = await _generateDailyStatsFromTodos(date);
+        DateTime startOfDay = DateTime(date.year, date.month, date.day);
+        DateTime endOfDay = startOfDay.add(Duration(days: 1));
+        
+        String dateKey = DateFormat('yyyy-MM-dd').format(date);
+        print('📅 처리 중인 날짜: $dateKey');
+        
+        // 해당 날짜의 할일들 필터링
+        List<QueryDocumentSnapshot> dayTodos = todosSnapshot.docs.where((doc) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          
+          String userId = data['userId'] ?? '';
+          bool userMatch = userId == 'anonymous';
+          
+          Timestamp? dueDate = data['dueDate'] as Timestamp?;
+          bool dateMatch = false;
+          
+          if (dueDate != null) {
+            DateTime todoDate = dueDate.toDate();
+            dateMatch = todoDate.isAtSameMomentAs(startOfDay) || 
+                       (todoDate.isAfter(startOfDay) && todoDate.isBefore(endOfDay));
+          }
+          
+          return userMatch && dateMatch;
+        }).toList();
+        
+        // isCompleted: true인 할일만 통계에 포함
+        int totalTasks = dayTodos.length;
+        int completedTasks = 0;
+        int totalStudyTime = 0;
+        Map<String, int> categoryTime = {};
+        
+        for (QueryDocumentSnapshot doc in dayTodos) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          bool isCompleted = data['isCompleted'] ?? false;
+          
+          if (isCompleted) {
+            String category = data['category'] ?? '기타';
+            int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+            String title = data['title'] ?? '제목없음';
+            
+            completedTasks++;
+            totalStudyTime += estimatedMinutes;
+            categoryTime[category] = (categoryTime[category] ?? 0) + estimatedMinutes;
+            
+            print('✅ $dateKey - 완료된 할일: "$title" (${category}, ${estimatedMinutes}분)');
+          }
+        }
+        
+        print('📊 $dateKey 통계: 완료 $completedTasks/$totalTasks, 총 시간 ${totalStudyTime}분');
+        
+        DailyStats dailyStats = DailyStats(
+          date: date,
+          studyTimeMinutes: totalStudyTime,
+          completedTasks: completedTasks,
+          totalTasks: totalTasks,
+          categoryTime: categoryTime,
+          achievements: _generateAchievements(completedTasks, totalStudyTime),
+        );
+        
         weeklyData.add(dailyStats);
       }
       
       return weeklyData;
     } catch (e) {
       print('❌ 주간 통계 로드 실패: $e');
-      return _getDefaultWeeklyStats();
+      return [];
     }
   }
 
-  // 월간 통계 데이터 가져오기 (최근 30일)
+  // 월간 통계 데이터 가져오기 (Firebase 전용) - todos에서 직접 가져와서 isCompleted만 카운팅
   Future<List<DailyStats>> getMonthlyStats() async {
+    if (!await _isFirebaseAvailable()) {
+      print('🔌 Firebase 연결 없음 - 빈 월간 데이터 반환');
+      return [];
+    }
+
     try {
-      print('🔄 로컬 월간 통계 데이터 생성');
+      print('🔄 Firebase 월간 통계 데이터 로드 (todos에서 isCompleted만)');
+      
+      // todos 컬렉션에서 모든 데이터 가져오기
+      QuerySnapshot todosSnapshot = await _firestore
+          .collection('todos')
+          .get();
+      
+      print('📦 Firestore에서 받은 할일 개수: ${todosSnapshot.docs.length}');
       
       List<DailyStats> monthlyData = [];
       DateTime now = DateTime.now();
       
+      // 최근 30일간의 데이터 생성
       for (int i = 29; i >= 0; i--) {
         DateTime date = now.subtract(Duration(days: i));
-        DailyStats dailyStats = await _generateDailyStatsFromTodos(date);
+        DateTime startOfDay = DateTime(date.year, date.month, date.day);
+        DateTime endOfDay = startOfDay.add(Duration(days: 1));
+        
+        String dateKey = DateFormat('yyyy-MM-dd').format(date);
+        
+        // 해당 날짜의 할일들 필터링
+        List<QueryDocumentSnapshot> dayTodos = todosSnapshot.docs.where((doc) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          
+          String userId = data['userId'] ?? '';
+          bool userMatch = userId == 'anonymous';
+          
+          Timestamp? dueDate = data['dueDate'] as Timestamp?;
+          bool dateMatch = false;
+          
+          if (dueDate != null) {
+            DateTime todoDate = dueDate.toDate();
+            dateMatch = todoDate.isAtSameMomentAs(startOfDay) || 
+                       (todoDate.isAfter(startOfDay) && todoDate.isBefore(endOfDay));
+          }
+          
+          return userMatch && dateMatch;
+        }).toList();
+        
+        // isCompleted: true인 할일만 통계에 포함
+        int totalTasks = dayTodos.length;
+        int completedTasks = 0;
+        int totalStudyTime = 0;
+        Map<String, int> categoryTime = {};
+        
+        for (QueryDocumentSnapshot doc in dayTodos) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          bool isCompleted = data['isCompleted'] ?? false;
+          
+          if (isCompleted) {
+            String category = data['category'] ?? '기타';
+            int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+            
+            completedTasks++;
+            totalStudyTime += estimatedMinutes;
+            categoryTime[category] = (categoryTime[category] ?? 0) + estimatedMinutes;
+          }
+        }
+        
+        if (totalStudyTime > 0) {
+          print('📊 $dateKey 통계: 완료 $completedTasks/$totalTasks, 총 시간 ${totalStudyTime}분');
+        }
+        
+        DailyStats dailyStats = DailyStats(
+          date: date,
+          studyTimeMinutes: totalStudyTime,
+          completedTasks: completedTasks,
+          totalTasks: totalTasks,
+          categoryTime: categoryTime,
+          achievements: _generateAchievements(completedTasks, totalStudyTime),
+        );
+        
         monthlyData.add(dailyStats);
       }
       
       return monthlyData;
     } catch (e) {
       print('❌ 월간 통계 로드 실패: $e');
-      return _getDefaultMonthlyStats();
+      return [];
     }
   }
 
-  // 연간 통계 데이터 가져오기 (최근 12개월)
+  // 연간 통계 데이터 가져오기 (Firebase 전용) - todos에서 직접 가져와서 isCompleted만 카운팅
   Future<List<MonthlyStats>> getYearlyStats() async {
+    if (!await _isFirebaseAvailable()) {
+      print('🔌 Firebase 연결 없음 - 빈 연간 데이터 반환');
+      return [];
+    }
+
     try {
-      print('🔄 로컬 연간 통계 데이터 생성');
+      print('🔄 Firebase 연간 통계 데이터 로드 (todos에서 isCompleted만)');
       
-      List<MonthlyStats> yearlyData = [];
+      // todos 컬렉션에서 모든 데이터 가져오기
+      QuerySnapshot todosSnapshot = await _firestore
+          .collection('todos')
+          .get();
+      
+      print('📦 Firestore에서 받은 할일 개수: ${todosSnapshot.docs.length}');
+      
       DateTime now = DateTime.now();
+      List<MonthlyStats> yearlyData = [];
       
+      // 최근 12개월간의 데이터 생성
       for (int i = 11; i >= 0; i--) {
         DateTime month = DateTime(now.year, now.month - i, 1);
+        DateTime startOfMonth = month;
+        DateTime endOfMonth = DateTime(month.year, month.month + 1, 1);
         
-        // 해당 월의 일일 통계들을 모아서 월간 통계 생성
-        List<DailyStats> dailyStats = [];
-        int daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+        print('📅 처리 중인 월: ${month.year}년 ${month.month}월');
         
-        for (int day = 1; day <= daysInMonth; day++) {
-          DateTime date = DateTime(month.year, month.month, day);
-          if (date.isBefore(now) || date.isAtSameMomentAs(DateTime(now.year, now.month, now.day))) {
-            DailyStats dailyStat = await _generateDailyStatsFromTodos(date);
-            dailyStats.add(dailyStat);
+        // 해당 월의 할일들 필터링
+        List<QueryDocumentSnapshot> monthTodos = todosSnapshot.docs.where((doc) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          
+          String userId = data['userId'] ?? '';
+          bool userMatch = userId == 'anonymous';
+          
+          Timestamp? dueDate = data['dueDate'] as Timestamp?;
+          bool dateMatch = false;
+          
+          if (dueDate != null) {
+            DateTime todoDate = dueDate.toDate();
+            dateMatch = todoDate.isAfter(startOfMonth.subtract(Duration(days: 1))) && 
+                       todoDate.isBefore(endOfMonth);
+          }
+          
+          return userMatch && dateMatch;
+        }).toList();
+        
+        // isCompleted: true인 할일만 통계에 포함
+        int totalTasks = monthTodos.length;
+        int completedTasks = 0;
+        int totalStudyTime = 0;
+        Map<String, int> categoryTime = {};
+        
+        for (QueryDocumentSnapshot doc in monthTodos) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          bool isCompleted = data['isCompleted'] ?? false;
+          
+          if (isCompleted) {
+            String category = data['category'] ?? '기타';
+            int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+            
+            completedTasks++;
+            totalStudyTime += estimatedMinutes;
+            categoryTime[category] = (categoryTime[category] ?? 0) + estimatedMinutes;
           }
         }
         
-        MonthlyStats monthlyStats = MonthlyStats.fromDailyStats(month, dailyStats);
+        if (totalStudyTime > 0) {
+          print('📊 ${month.year}년 ${month.month}월 통계: 완료 $completedTasks/$totalTasks, 총 시간 ${totalStudyTime}분');
+        }
+        
+        double averageDaily = totalStudyTime > 0 ? totalStudyTime / DateTime(month.year, month.month + 1, 0).day : 0.0;
+        
+        MonthlyStats monthlyStats = MonthlyStats(
+          month: month,
+          totalStudyTimeMinutes: totalStudyTime,
+          totalCompletedTasks: completedTasks,
+          totalTasks: totalTasks,
+          averageDailyStudyTime: averageDaily,
+          categoryTime: categoryTime,
+          achievements: _generateMonthlyAchievements([]), // 빈 배열로 전달
+        );
+        
         yearlyData.add(monthlyStats);
       }
       
       return yearlyData;
     } catch (e) {
       print('❌ 연간 통계 로드 실패: $e');
-      return _getDefaultYearlyStats();
+      return [];
     }
-  }
-
-  // 월간 통계 집계 및 저장 (로컬 버전)
-  Future<bool> aggregateMonthlyStats(DateTime month) async {
-    try {
-      String monthKey = DateFormat('yyyy-MM').format(month);
-      print('✅ 월간 통계 집계 완료 (로컬): $monthKey');
-      return true;
-    } catch (e) {
-      print('❌ 월간 통계 집계 실패: $e');
-      return false;
-    }
-  }
-
-  // 기본 주간 데이터 (테스트용)
-  List<DailyStats> _getDefaultWeeklyStats() {
-    DateTime now = DateTime.now();
-    return List.generate(7, (index) {
-      DateTime date = now.subtract(Duration(days: 6 - index));
-      return DailyStats(
-        date: date,
-        studyTimeMinutes: [45, 60, 30, 90, 75, 120, 85][index],
-        completedTasks: [3, 4, 2, 6, 5, 8, 7][index],
-        totalTasks: [5, 6, 4, 8, 7, 10, 9][index],
-        categoryTime: {
-          '프로젝트': [25, 35, 15, 50, 40, 70, 45][index],
-          '공부': [15, 20, 10, 30, 25, 40, 30][index],
-          '운동': [5, 5, 5, 10, 10, 10, 10][index],
-        },
-        achievements: index > 4 ? ['꾸준함'] : [],
-      );
-    });
-  }
-
-  // 기본 월간 데이터 (테스트용)
-  List<DailyStats> _getDefaultMonthlyStats() {
-    DateTime now = DateTime.now();
-    return List.generate(30, (index) {
-      DateTime date = now.subtract(Duration(days: 29 - index));
-      return DailyStats(
-        date: date,
-        studyTimeMinutes: (index % 7 + 1) * 15 + (index % 3) * 10,
-        completedTasks: (index % 5) + 2,
-        totalTasks: (index % 7) + 4,
-        categoryTime: {
-          '프로젝트': (index % 4 + 1) * 15,
-          '공부': (index % 3 + 1) * 12,
-          '운동': (index % 2 + 1) * 8,
-        },
-        achievements: index % 7 == 0 ? ['주간 목표 달성'] : [],
-      );
-    });
-  }
-
-  // 기본 연간 데이터 (테스트용)
-  List<MonthlyStats> _getDefaultYearlyStats() {
-    DateTime now = DateTime.now();
-    return List.generate(12, (index) {
-      DateTime month = DateTime(now.year, now.month - 11 + index, 1);
-      return MonthlyStats(
-        month: month,
-        totalStudyTimeMinutes: (index + 1) * 300 + (index % 3) * 100,
-        totalCompletedTasks: (index + 1) * 50 + (index % 4) * 10,
-        totalTasks: (index + 1) * 70 + (index % 5) * 15,
-        averageDailyStudyTime: (index + 1) * 10 + (index % 3) * 5,
-        categoryTime: {
-          '프로젝트': (index + 1) * 120,
-          '공부': (index + 1) * 100,
-          '운동': (index + 1) * 80,
-        },
-        achievements: index % 3 == 0 ? ['월간 목표 달성'] : [],
-      );
-    });
   }
 
   // 주간 배지 생성
   List<String> _generateWeeklyAchievements(List<DailyStats> weeklyData) {
     List<String> achievements = [];
+    
+    if (weeklyData.isEmpty) return achievements;
     
     int totalStudyTime = weeklyData.fold(0, (sum, stat) => sum + stat.studyTimeMinutes);
     int totalCompleted = weeklyData.fold(0, (sum, stat) => sum + stat.completedTasks);
@@ -256,9 +480,9 @@ class StatisticsService {
     
     if (activeDays >= 7) achievements.add('완벽한 주');
     if (activeDays >= 5) achievements.add('주간 꾸준함');
-    if (totalStudyTime >= 840) achievements.add('주간 14시간'); // 하루 평균 2시간
+    if (totalStudyTime >= 840) achievements.add('주간 14시간');
     if (totalCompleted >= 35) achievements.add('주간 할일 마스터');
-    if (totalStudyTime >= 1200) achievements.add('주간 집중왕'); // 20시간
+    if (totalStudyTime >= 1200) achievements.add('주간 집중왕');
     
     return achievements;
   }
@@ -267,15 +491,17 @@ class StatisticsService {
   List<String> _generateMonthlyAchievements(List<DailyStats> monthlyData) {
     List<String> achievements = [];
     
+    if (monthlyData.isEmpty) return achievements;
+    
     int totalStudyTime = monthlyData.fold(0, (sum, stat) => sum + stat.studyTimeMinutes);
     int totalCompleted = monthlyData.fold(0, (sum, stat) => sum + stat.completedTasks);
     int activeDays = monthlyData.where((stat) => stat.studyTimeMinutes > 0).length;
     
     if (activeDays >= 25) achievements.add('월간 꾸준함');
     if (activeDays >= 30) achievements.add('완벽한 달');
-    if (totalStudyTime >= 3600) achievements.add('월간 60시간'); // 하루 평균 2시간
+    if (totalStudyTime >= 3600) achievements.add('월간 60시간');
     if (totalCompleted >= 150) achievements.add('월간 할일 마스터');
-    if (totalStudyTime >= 5400) achievements.add('월간 집중왕'); // 90시간
+    if (totalStudyTime >= 5400) achievements.add('월간 집중왕');
     
     return achievements;
   }
@@ -284,15 +510,17 @@ class StatisticsService {
   List<String> _generateYearlyAchievements(List<MonthlyStats> yearlyData) {
     List<String> achievements = [];
     
+    if (yearlyData.isEmpty) return achievements;
+    
     int totalStudyTime = yearlyData.fold(0, (sum, stat) => sum + stat.totalStudyTimeMinutes);
     int totalCompleted = yearlyData.fold(0, (sum, stat) => sum + stat.totalCompletedTasks);
     int activeMonths = yearlyData.where((stat) => stat.totalStudyTimeMinutes > 0).length;
     
     if (activeMonths >= 12) achievements.add('완벽한 해');
     if (activeMonths >= 10) achievements.add('연간 꾸준함');
-    if (totalStudyTime >= 43200) achievements.add('연간 720시간'); // 하루 평균 2시간
+    if (totalStudyTime >= 43200) achievements.add('연간 720시간');
     if (totalCompleted >= 1800) achievements.add('연간 할일 마스터');
-    if (totalStudyTime >= 72000) achievements.add('연간 집중왕'); // 1200시간
+    if (totalStudyTime >= 72000) achievements.add('연간 집중왕');
     
     return achievements;
   }
@@ -304,7 +532,7 @@ class StatisticsService {
       return _generateWeeklyAchievements(weeklyData);
     } catch (e) {
       print('❌ 주간 배지 로드 실패: $e');
-      return ['주간 꾸준함']; // 기본 배지
+      return [];
     }
   }
 
@@ -315,7 +543,7 @@ class StatisticsService {
       return _generateMonthlyAchievements(monthlyData);
     } catch (e) {
       print('❌ 월간 배지 로드 실패: $e');
-      return ['월간 꾸준함']; // 기본 배지
+      return [];
     }
   }
 
@@ -326,29 +554,40 @@ class StatisticsService {
       return _generateYearlyAchievements(yearlyData);
     } catch (e) {
       print('❌ 연간 배지 로드 실패: $e');
-      return ['연간 꾸준함']; // 기본 배지
+      return [];
     }
   }
 
   // 일간 배지 가져오기
   Future<List<String>> getDailyAchievements(DateTime date) async {
     try {
-      DailyStats dailyStats = await _generateDailyStatsFromTodos(date);
+      DailyStats dailyStats = await getDailyStats(date);
       return dailyStats.achievements;
     } catch (e) {
       print('❌ 일간 배지 로드 실패: $e');
-      return ['꾸준함']; // 기본 배지
+      return [];
     }
   }
 
-  // 일간 통계 데이터 가져오기
-  Future<DailyStats> getDailyStats(DateTime date) async {
+  // 카테고리 목록 가져오기
+  Future<List<String>> getCategories() async {
     try {
-      return await _generateDailyStatsFromTodos(date);
+      if (await _isFirebaseAvailable()) {
+        QuerySnapshot snapshot = await _firestore.collection('categories').get();
+        List<String> categories = [];
+        for (QueryDocumentSnapshot doc in snapshot.docs) {
+          Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+          String name = data['name'] ?? '';
+          if (name.isNotEmpty) {
+            categories.add(name);
+          }
+        }
+        return categories.isNotEmpty ? categories : ['프로젝트', '공부', '운동', '기타'];
+      }
     } catch (e) {
-      print('❌ 일간 통계 로드 실패: $e');
-      return DailyStats.empty(date);
+      print('❌ 카테고리 로드 실패: $e');
     }
+    return ['프로젝트', '공부', '운동', '기타'];
   }
 }
 
