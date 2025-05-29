@@ -410,8 +410,8 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               const SizedBox(width: 20),
               Expanded(
                 child: _buildStatItem(
-                  '완료 블록',
-                  '$totalActiveBlocks/$totalPlannedBlocks',
+                  '완료 할일',
+                  '${_dailyData?.completedTasks ?? 0}/${_dailyData?.totalTasks ?? 0}',
                   Icons.task_alt,
                 ),
               ),
@@ -602,86 +602,45 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             const SizedBox(height: 20),
             if (categoryTime.isNotEmpty) ...[
               // 시간 라벨 (0시~23시)
-              SizedBox(
+              Container(
                 height: 30,
                 child: Row(
                   children: List.generate(24, (hour) {
                     return Expanded(
-                      child: Center(
-                        child: Text(
-                          hour.toString().padLeft(2, '0'),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-              const SizedBox(height: 10),
-              // 실제 데이터 기반 타임라인 (간단화)
-              Container(
-                height: 80,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(24, (hour) {
-                    int maxActivity = hourlyActivity.isEmpty ? 0 : hourlyActivity.values.reduce((a, b) => a > b ? a : b);
-                    int activityMinutes = hourlyActivity[hour] ?? 0;
-                    double heightRatio = maxActivity > 0 ? activityMinutes / maxActivity : 0.0;
-                    double barHeight = activityMinutes > 0 ? (60 * heightRatio + 10) : 10;
-                    
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          if (activityMinutes > 0) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  '${hour}시: ${_formatTime(activityMinutes)}',
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
-                                ),
-                                duration: const Duration(seconds: 1),
-                                backgroundColor: Colors.blue.shade600,
-                              ),
-                            );
-                          }
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 1),
-                          height: barHeight,
-                          decoration: BoxDecoration(
-                            color: activityMinutes > 0 
-                                ? _getActivityIntensityColor(activityMinutes, maxActivity)
-                                : Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(3),
-                            border: Border.all(
-                              color: activityMinutes > 0 
-                                  ? Colors.blue.shade200
-                                  : Colors.grey.shade200,
-                              width: 0.5,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            left: BorderSide(
+                              color: Colors.grey.shade300, 
+                              width: 0.5
                             ),
                           ),
-                          child: activityMinutes > 0 && barHeight > 20
-                              ? Center(
-                                  child: Text(
-                                    '${activityMinutes}m',
-                                    style: const TextStyle(
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                )
-                              : null,
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${hour.toString().padLeft(2, '0')}',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
                       ),
                     );
                   }),
                 ),
               ),
+              const SizedBox(height: 5),
+              // 타임라인 표시 (각 카테고리별로)
+              ...categoryTime.entries.map((categoryEntry) {
+                return _buildCategoryTimeline(
+                  categoryEntry.key, 
+                  categoryEntry.value, 
+                  hourlyActivity,
+                  categoryTime
+                );
+              }).toList(),
             ] else
               Center(
                 child: Padding(
@@ -717,6 +676,98 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  // 카테고리별 타임라인 생성
+  Widget _buildCategoryTimeline(String category, int totalMinutes, Map<int, int> hourlyActivity, Map<String, int> allCategoryTime) {
+    if (totalMinutes == 0) return Container();
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 카테고리 이름과 총 시간
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: _getCategoryColor(category),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  category,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _formatTime(totalMinutes),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // 타임라인 바
+          Container(
+            height: 20,
+            child: Row(
+              children: List.generate(24, (hour) {
+                // 해당 시간대에 이 카테고리의 활동이 있었는지 확인
+                int activityMinutes = hourlyActivity[hour] ?? 0;
+                bool hasActivity = activityMinutes > 0;
+                
+                // 추정: 해당 카테고리가 전체 시간 중 차지하는 비율로 계산
+                // (실제로는 각 할일의 카테고리별 시간 정보가 필요하지만, 현재 데이터로는 추정)
+                double categoryRatio = totalMinutes > 0 ? totalMinutes / (allCategoryTime.values.fold(0, (a, b) => a + b)) : 0;
+                int estimatedCategoryMinutes = hasActivity ? (activityMinutes * categoryRatio).round() : 0;
+                
+                return Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 0.5),
+                    decoration: BoxDecoration(
+                      color: estimatedCategoryMinutes > 0 
+                          ? _getCategoryColor(category).withOpacity(0.8)
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(2),
+                      border: Border.all(
+                        color: Colors.grey.shade200, 
+                        width: 0.3
+                      ),
+                    ),
+                    child: estimatedCategoryMinutes > 0 
+                        ? Center(
+                            child: estimatedCategoryMinutes >= 30 
+                                ? Text(
+                                    '${estimatedCategoryMinutes}m',
+                                    style: const TextStyle(
+                                      fontSize: 7,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : null,
+                          )
+                        : null,
+                  ),
+                );
+              }),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -928,7 +979,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                 child: Column(
                   children: categoryTime.entries.map((entry) {
                     Color color = _getCategoryColor(entry.key);
-                    double percentage = (entry.value / totalTime) * 100;
+                    double percentage = totalTime > 0 ? (entry.value / totalTime) * 100 : 0;
+                    
+                    // NaN 및 무한대 값 안전 처리
+                    if (!percentage.isFinite) {
+                      percentage = 0;
+                    }
                     
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
@@ -1356,6 +1412,11 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     int totalCompleted = _weeklyData.fold(0, (sum, stat) => sum + stat.completedTasks);
     int totalTasks = _weeklyData.fold(0, (sum, stat) => sum + stat.totalTasks);
     double weeklyAvg = _weeklyData.isNotEmpty ? totalStudyTime / 7 : 0; // 주간 평균 (7일 기준)
+    
+    // NaN 및 무한대 값 안전 처리
+    if (!weeklyAvg.isFinite) {
+      weeklyAvg = 0;
+    }
 
     return Container(
       width: double.infinity,
@@ -1377,15 +1438,15 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
+        children: [
+          const Text(
             '주간 요약',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 20),
           Row(
             children: [
@@ -1412,7 +1473,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Expanded(
                 child: _buildStatItem(
                   '주간 평균',
-                  '${(weeklyAvg / 60).toStringAsFixed(1)}시간/일',
+                  '${(weeklyAvg / 60).isFinite ? (weeklyAvg / 60).toStringAsFixed(1) : "0.0"}시간/일',
                   Icons.trending_up,
                 ),
               ),
@@ -1437,11 +1498,16 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     int totalCompleted = _monthlyData.fold(0, (sum, stat) => sum + stat.completedTasks);
     int totalTasks = _monthlyData.fold(0, (sum, stat) => sum + stat.totalTasks);
     double monthlyAvg = _monthlyData.isNotEmpty ? totalStudyTime / 4 : 0; // 월간 평균을 주 단위로 (4주 기준)
+    
+    // NaN 및 무한대 값 안전 처리
+    if (!monthlyAvg.isFinite) {
+      monthlyAvg = 0;
+    }
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [Colors.purple.shade400, Colors.purple.shade600],
           begin: Alignment.topLeft,
@@ -1462,10 +1528,10 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           const Text(
             '월간 요약',
             style: TextStyle(
-                    color: Colors.white,
+              color: Colors.white,
               fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 20),
           Row(
@@ -1493,7 +1559,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Expanded(
                 child: _buildStatItem(
                   '월간 평균',
-                  '${(monthlyAvg / 60).toStringAsFixed(1)}시간/주',
+                  '${(monthlyAvg / 60).isFinite ? (monthlyAvg / 60).toStringAsFixed(1) : "0.0"}시간/주',
                   Icons.trending_up,
                 ),
               ),
@@ -1548,6 +1614,11 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     int totalCompleted = _yearlyData.fold(0, (sum, stat) => sum + stat.totalCompletedTasks);
     int totalTasks = _yearlyData.fold(0, (sum, stat) => sum + stat.totalTasks);
     double yearlyAvg = _yearlyData.isNotEmpty ? totalStudyTime / 12 : 0; // 연간 평균 (12개월 기준)
+    
+    // NaN 및 무한대 값 안전 처리
+    if (!yearlyAvg.isFinite) {
+      yearlyAvg = 0;
+    }
 
     return Container(
       key: ValueKey('yearly_summary_${_selectedYear.year}'),
@@ -1598,7 +1669,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Expanded(
                 child: _buildStatItem(
                   '총 활동시간',
-                  '${(totalStudyTime / 60).toInt()}시간',
+                  '${(totalStudyTime / 60).isFinite ? (totalStudyTime / 60).toInt() : 0}시간',
                   Icons.timer,
                 ),
               ),
@@ -1618,7 +1689,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Expanded(
                 child: _buildStatItem(
                   '연간 평균',
-                  '${(yearlyAvg / 60).toInt()}시간/월',
+                  '${(yearlyAvg / 60).isFinite ? (yearlyAvg / 60).toInt() : 0}시간/월',
                   Icons.trending_up,
                 ),
               ),
@@ -1645,8 +1716,14 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     List<Widget> stackItems = [];
     
     categoryTime.entries.forEach((entry) {
-      double proportion = entry.value / totalTime;
+      double proportion = totalTime > 0 ? entry.value / totalTime : 0;
       double height = totalHeight * proportion;
+      
+      // NaN 및 무한대 값 안전 처리
+      if (!proportion.isFinite || !height.isFinite) {
+        proportion = 0;
+        height = 0;
+      }
       
       if (height > 0.5) { // 최소 높이 0.5픽셀 이상만 표시
         stackItems.add(
@@ -1702,7 +1779,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       ..sort((a, b) => b.value.compareTo(a.value));
     
     for (var entry in sortedCategories) {
-      double segmentHeight = (entry.value / totalTime) * totalHeight;
+      double segmentHeight = totalTime > 0 ? (entry.value / totalTime) * totalHeight : 0;
+      
+      // NaN 및 무한대 값 안전 처리
+      if (!segmentHeight.isFinite) {
+        segmentHeight = 0;
+      }
       
       if (segmentHeight > 0.5) {
         segments.add(
@@ -2318,7 +2400,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                 child: Column(
                   children: categoryTime.entries.map((entry) {
                     Color color = _getCategoryColor(entry.key);
-                    double percentage = (entry.value / totalTime) * 100;
+                    double percentage = totalTime > 0 ? (entry.value / totalTime) * 100 : 0;
+                    
+                    // NaN 및 무한대 값 안전 처리
+                    if (!percentage.isFinite) {
+                      percentage = 0;
+                    }
                     
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -2875,8 +2962,15 @@ class DonutChartPainter extends CustomPainter {
 
     double startAngle = -math.pi / 2;
 
+    // total이 0이면 아무것도 그리지 않음
+    if (total <= 0) return;
+
     data.forEach((category, value) {
       final sweepAngle = (value / total) * 2 * math.pi * animationValue;
+      
+      // NaN 및 무한대 값 안전 처리
+      if (!sweepAngle.isFinite || sweepAngle <= 0) return;
+      
       final paint = Paint()
         ..color = _getCategoryColor(category)
         ..style = PaintingStyle.stroke
@@ -2891,7 +2985,10 @@ class DonutChartPainter extends CustomPainter {
         paint,
       );
 
-      startAngle += sweepAngle / animationValue;
+      // animationValue가 0이 아닐 때만 계산
+      if (animationValue > 0) {
+        startAngle += sweepAngle / animationValue;
+      }
     });
   }
 
