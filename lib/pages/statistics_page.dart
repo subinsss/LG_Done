@@ -1186,12 +1186,34 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  _getDateRangeText(period),
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.purple.shade600,
+                GestureDetector(
+                  onTap: () => _showDatePicker(period),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.purple.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          size: 16,
+                          color: Colors.purple.shade600,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _getDateRangeText(period),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.purple.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 if (!_isToday(period)) ...[
@@ -2443,6 +2465,398 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       default:
         return '완료된 할일이 없습니다';
     }
+  }
+
+  // 일간 날짜 선택기 (달력)
+  Future<void> _showDailyDatePicker() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDay,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Colors.purple.shade600,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    
+    if (picked != null && picked != _selectedDay) {
+      setState(() {
+        _selectedDay = picked;
+      });
+      _loadStatistics();
+    }
+  }
+
+  // 주간 선택기
+  Future<void> _showWeeklyPicker() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.white),
+            SizedBox(width: 8),
+            Text('← → 버튼으로 주간을 변경할 수 있습니다'),
+          ],
+        ),
+        backgroundColor: Colors.purple.shade600,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // 월간 선택기
+  Future<void> _showMonthlyPicker() async {
+    int currentYear = _selectedMonth.year;
+    int currentMonth = _selectedMonth.month;
+    int startYear = 2020;
+    int endYear = DateTime.now().year;
+    
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text(
+                '연월 선택',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: Container(
+                width: 320,
+                height: 400,
+                child: Column(
+                  children: [
+                    // 현재 선택된 연월 표시
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.purple.shade200),
+                      ),
+                      child: Text(
+                        '${currentYear}년 ${currentMonth}월',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.purple.shade700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // 연도와 월 선택 영역
+                    Expanded(
+                      child: Row(
+                        children: [
+                          // 연도 선택
+                          Expanded(
+                            child: Column(
+                              children: [
+                                Text(
+                                  '연도',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Expanded(
+                                  child: ListView.builder(
+                                    itemCount: endYear - startYear + 1,
+                                    reverse: true,
+                                    itemBuilder: (context, index) {
+                                      int year = endYear - index;
+                                      bool isSelected = year == currentYear;
+                                      
+                                      return GestureDetector(
+                                        onTap: () {
+                                          setDialogState(() {
+                                            currentYear = year;
+                                            // 미래 월 선택 방지
+                                            if (currentYear == DateTime.now().year && 
+                                                currentMonth > DateTime.now().month) {
+                                              currentMonth = DateTime.now().month;
+                                            }
+                                          });
+                                        },
+                                        child: Container(
+                                          margin: const EdgeInsets.symmetric(vertical: 2),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            color: isSelected 
+                                                ? Colors.purple.shade600 
+                                                : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: isSelected 
+                                                  ? Colors.purple.shade600 
+                                                  : Colors.grey.shade300,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              '${year}',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                                color: isSelected 
+                                                    ? Colors.white 
+                                                    : Colors.black,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          // 월 선택
+                          Expanded(
+                            child: Column(
+                              children: [
+                                Text(
+                                  '월',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Expanded(
+                                  child: ListView.builder(
+                                    itemCount: 12,
+                                    itemBuilder: (context, index) {
+                                      int month = index + 1;
+                                      bool isSelected = month == currentMonth;
+                                      bool isDisabled = currentYear == DateTime.now().year && 
+                                                      month > DateTime.now().month;
+                                      
+                                      return GestureDetector(
+                                        onTap: isDisabled ? null : () {
+                                          setDialogState(() {
+                                            currentMonth = month;
+                                          });
+                                        },
+                                        child: Container(
+                                          margin: const EdgeInsets.symmetric(vertical: 2),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            color: isSelected 
+                                                ? Colors.purple.shade600 
+                                                : isDisabled
+                                                    ? Colors.grey.shade100
+                                                    : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: isSelected 
+                                                  ? Colors.purple.shade600 
+                                                  : isDisabled
+                                                      ? Colors.grey.shade200
+                                                      : Colors.grey.shade300,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              '${month}월',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                                color: isSelected 
+                                                    ? Colors.white 
+                                                    : isDisabled
+                                                        ? Colors.grey.shade400
+                                                        : Colors.black,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('취소'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedMonth = DateTime(currentYear, currentMonth, 1);
+                    });
+                    Navigator.of(context).pop();
+                    _loadStatistics();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple.shade600,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('선택'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // 기간별 날짜 선택기 호출
+  Future<void> _showDatePicker(String period) async {
+    switch (period) {
+      case '일간':
+        await _showDailyDatePicker();
+        break;
+      case '주간':
+        await _showWeeklyPicker();
+        break;
+      case '월간':
+        await _showMonthlyPicker();
+        break;
+      case '연간':
+        await _showYearlyPicker();
+        break;
+    }
+  }
+
+  // 연간 선택기
+  Future<void> _showYearlyPicker() async {
+    int currentYear = _selectedYear.year;
+    int startYear = 2020;
+    int endYear = DateTime.now().year;
+    
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text(
+                '연도 선택',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: Container(
+                width: 250,
+                height: 300,
+                child: Column(
+                  children: [
+                    // 현재 선택된 연도 표시
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.purple.shade200),
+                      ),
+                      child: Text(
+                        '${currentYear}년',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.purple.shade700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // 연도 스크롤 리스트
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: endYear - startYear + 1,
+                        reverse: true, // 최신 연도가 위에 오도록
+                        itemBuilder: (context, index) {
+                          int year = endYear - index;
+                          bool isSelected = year == currentYear;
+                          
+                          return GestureDetector(
+                            onTap: () {
+                              setDialogState(() {
+                                currentYear = year;
+                              });
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: isSelected 
+                                    ? Colors.purple.shade600 
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSelected 
+                                      ? Colors.purple.shade600 
+                                      : Colors.grey.shade300,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${year}년',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    color: isSelected 
+                                        ? Colors.white 
+                                        : Colors.black,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('취소'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedYear = DateTime(currentYear, 1, 1);
+                    });
+                    Navigator.of(context).pop();
+                    _loadStatistics();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple.shade600,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('선택'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 }
 
