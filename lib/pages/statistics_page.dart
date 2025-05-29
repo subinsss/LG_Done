@@ -84,9 +84,18 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       
       // 타임아웃 설정 (10초)
       final dailyFuture = _statisticsService.getDailyStats(_selectedDay);
-      final weeklyFuture = _statisticsService.getWeeklyStats();
-      final monthlyFuture = _statisticsService.getMonthlyStats();
-      final yearlyFuture = _statisticsService.getYearlyStats();
+      
+      // 현재 탭에 따라 다른 데이터 로드
+      Future<List<DailyStats>> weeklyFuture;
+      Future<List<DailyStats>> monthlyFuture;
+      
+      // 주간 데이터는 현재 선택된 주간의 데이터를 가져오기
+      weeklyFuture = _statisticsService.getSpecificWeekStats(_selectedWeek);
+      
+      // 월간 데이터는 현재 선택된 월의 데이터를 가져오기
+      monthlyFuture = _statisticsService.getSpecificMonthStats(_selectedMonth);
+      
+      final yearlyFuture = _statisticsService.getSpecificYearStats(_selectedYear);
       
       // 배지 데이터도 함께 로드
       final dailyAchievementsFuture = _statisticsService.getDailyAchievements(_selectedDay);
@@ -234,12 +243,10 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           break;
         case '연간':
           _selectedYear = DateTime(_selectedYear.year + direction, 1, 1);
-          // 연간 데이터는 setState 안에서 즉시 업데이트 (빈 데이터)
-          _yearlyData = [];
-          return; // _loadStatistics 호출하지 않고 즉시 반환
+          break;
       }
     });
-    _loadStatistics(); // 새로운 기간의 데이터 로드 (연간 제외)
+    _loadStatistics(); // 새로운 기간의 데이터 로드
   }
 
   // 날짜 범위 텍스트 생성
@@ -495,6 +502,47 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     // Firebase 데이터를 사용한 기존 로직
     Map<String, int> categoryTime = _getDailyUnifiedCategoryData();
     
+    // 현재 활성 탭에 따라 다른 hourlyActivity 데이터 사용
+    Map<int, int> hourlyActivity = {};
+    
+    switch (_tabController.index) {
+      case 0: // 일간
+        if (_dailyData != null) {
+          hourlyActivity = _dailyData!.hourlyActivity;
+        }
+        break;
+      case 1: // 주간
+        // 현재 선택된 주간의 데이터만 필터링
+        DateTime startOfWeek = _selectedWeek.subtract(Duration(days: _selectedWeek.weekday - 1));
+        DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
+        
+        for (var dailyStats in _weeklyData) {
+          // 현재 선택된 주에 해당하는 날짜인지 확인
+          if (dailyStats.date.isAfter(startOfWeek.subtract(Duration(days: 1))) && 
+              dailyStats.date.isBefore(endOfWeek.add(Duration(days: 1)))) {
+            dailyStats.hourlyActivity.forEach((hour, minutes) {
+              hourlyActivity[hour] = (hourlyActivity[hour] ?? 0) + minutes;
+            });
+          }
+        }
+        break;
+      case 2: // 월간
+        // 현재 선택된 월의 데이터만 필터링
+        for (var dailyStats in _monthlyData) {
+          if (dailyStats.date.year == _selectedMonth.year && 
+              dailyStats.date.month == _selectedMonth.month) {
+            dailyStats.hourlyActivity.forEach((hour, minutes) {
+              hourlyActivity[hour] = (hourlyActivity[hour] ?? 0) + minutes;
+            });
+          }
+        }
+        break;
+      case 3: // 연간
+        // 연간은 시간대별 데이터가 너무 많으므로 빈 데이터 사용
+        hourlyActivity = {};
+        break;
+    }
+    
     return GestureDetector(
       onPanUpdate: (details) {
         // 스와이프 감지
@@ -525,20 +573,29 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  '시간별 활동',
-                  style: TextStyle(
+                Text(
+                  _getTimeTableTitle(),
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                // 범례 - 실제 카테고리에 따라 동적 생성
-                if (categoryTime.isNotEmpty)
-                  Wrap(
-                    spacing: 8,
-                    children: _processCategories(categoryTime).keys.map((category) {
-                      return _buildLegendItem(category, _getCategoryColor(category));
-                    }).toList(),
+                // 총 활동 시간 표시
+                if (hourlyActivity.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '총 ${_formatTime(hourlyActivity.values.fold(0, (a, b) => a + b))}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -569,17 +626,56 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Container(
                 height: 80,
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: List.generate(24, (hour) {
+                    int maxActivity = hourlyActivity.isEmpty ? 0 : hourlyActivity.values.reduce((a, b) => a > b ? a : b);
+                    int activityMinutes = hourlyActivity[hour] ?? 0;
+                    double heightRatio = maxActivity > 0 ? activityMinutes / maxActivity : 0.0;
+                    double barHeight = activityMinutes > 0 ? (60 * heightRatio + 10) : 10;
+                    
                     return Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 1),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(3),
-                          border: Border.all(
-                            color: Colors.grey.shade200,
-                            width: 0.5,
+                      child: GestureDetector(
+                        onTap: () {
+                          if (activityMinutes > 0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  '${hour}시: ${_formatTime(activityMinutes)}',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                duration: const Duration(seconds: 1),
+                                backgroundColor: Colors.blue.shade600,
+                              ),
+                            );
+                          }
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
+                          height: barHeight,
+                          decoration: BoxDecoration(
+                            color: activityMinutes > 0 
+                                ? _getActivityIntensityColor(activityMinutes, maxActivity)
+                                : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(3),
+                            border: Border.all(
+                              color: activityMinutes > 0 
+                                  ? Colors.blue.shade200
+                                  : Colors.grey.shade200,
+                              width: 0.5,
+                            ),
                           ),
+                          child: activityMinutes > 0 && barHeight > 20
+                              ? Center(
+                                  child: Text(
+                                    '${activityMinutes}m',
+                                    style: const TextStyle(
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : null,
                         ),
                       ),
                     );
@@ -590,12 +686,32 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Center(
                 child: Padding(
                   padding: const EdgeInsets.all(40),
-                  child: Text(
-                    '완료된 할일이 없습니다',
-                    style: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 16,
-                    ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.schedule_outlined,
+                        size: 48,
+                        color: Colors.grey.shade400,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _getEmptyTimeTableMessage(),
+                        style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '할일을 완료하면 시간별 활동이 표시됩니다',
+                        style: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -647,6 +763,20 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         return Colors.grey.shade400;
       default:
         return Colors.grey.shade400;
+    }
+  }
+
+  // 활동 강도에 따른 색상 반환
+  Color _getActivityIntensityColor(int minutes, int maxMinutes) {
+    if (maxMinutes == 0) return Colors.grey.shade200;
+    
+    double ratio = minutes / maxMinutes;
+    if (ratio > 0.66) {
+      return Colors.blue.shade600; // 높음
+    } else if (ratio > 0.33) {
+      return Colors.blue.shade400; // 보통
+    } else {
+      return Colors.blue.shade200; // 낮음
     }
   }
 
@@ -2278,6 +2408,40 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           Colors.blueGrey.shade400,
         ];
         return colors[hash.abs() % colors.length];
+    }
+  }
+
+  // 시간대별 활동 제목 반환
+  String _getTimeTableTitle() {
+    switch (_tabController.index) {
+      case 0:
+        return '일간 시간별 활동';
+      case 1:
+        return '주간 시간별 활동';
+      case 2:
+        return '월간 시간별 활동';
+      case 3:
+        return '연간 시간별 활동';
+      default:
+        return '시간별 활동';
+    }
+  }
+
+  // 빈 시간대별 활동 메시지 반환
+  String _getEmptyTimeTableMessage() {
+    switch (_tabController.index) {
+      case 0:
+        return '${DateFormat('MM월 dd일').format(_selectedDay)}에 완료된 할일이 없습니다';
+      case 1:
+        DateTime startOfWeek = _selectedWeek.subtract(Duration(days: _selectedWeek.weekday - 1));
+        DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
+        return '${DateFormat('MM월 dd일').format(startOfWeek)} - ${DateFormat('MM월 dd일').format(endOfWeek)} 주간에\n완료된 할일이 없습니다';
+      case 2:
+        return '${DateFormat('yyyy년 MM월').format(_selectedMonth)}에 완료된 할일이 없습니다';
+      case 3:
+        return '${_selectedYear.year}년에 완료된 할일이 없습니다';
+      default:
+        return '완료된 할일이 없습니다';
     }
   }
 }
