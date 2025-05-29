@@ -19,3 +19,7 @@ def get_titles():
         if "deleted" not in data and "title" in data:
             titles.append(data["title"])
     return jsonify(titles), 200
+
+
+
+
