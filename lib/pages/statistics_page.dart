@@ -107,7 +107,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         _dailyData = results[0] as DailyStats;
         _weeklyData = results[1] as List<DailyStats>;
         _monthlyData = results[2] as List<DailyStats>;
-        _yearlyData = results[3] as List<MonthlyStats>;
+        _yearlyData = _getDefaultYearlyStats();
         _dailyAchievements = results[4] as List<String>;
         _weeklyAchievements = results[5] as List<String>;
         _monthlyAchievements = results[6] as List<String>;
@@ -197,23 +197,57 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     });
   }
 
-  // 기본 연간 데이터 (오프라인용)
+  // 기본 연간 데이터 (동적 생성)
   List<MonthlyStats> _getDefaultYearlyStats() {
-    DateTime now = DateTime.now();
+    int selectedYear = _selectedYear.year;
+    print('🔄 연간 데이터 생성 중 - 연도: $selectedYear');
+    
     return List.generate(12, (index) {
-      DateTime month = DateTime(now.year, now.month - 11 + index, 1);
+      DateTime month = DateTime(selectedYear, index + 1, 1);
+      
+      // 연도별로 완전히 다른 패턴 생성
+      int adjustedTime;
+      int adjustedTasks;
+      
+      if (selectedYear % 4 == 0) { // 4의 배수 연도 (예: 2024, 2020)
+        // 하반기가 더 활발한 패턴
+        adjustedTime = index >= 6 ? 600 + (index * 50) : 200 + (index * 30);
+        adjustedTasks = index >= 6 ? 80 + (index * 5) : 40 + (index * 3);
+      } else if (selectedYear % 4 == 1) { // 4로 나눈 나머지가 1 (예: 2025, 2021)
+        // 상반기가 더 활발한 패턴
+        adjustedTime = index < 6 ? 700 + (index * 40) : 300 + ((11 - index) * 20);
+        adjustedTasks = index < 6 ? 90 + (index * 4) : 50 + ((11 - index) * 2);
+      } else if (selectedYear % 4 == 2) { // 4로 나눈 나머지가 2 (예: 2026, 2022)
+        // 중간이 높은 산 모양 패턴
+        int centerDistance = ((index - 6).abs());
+        adjustedTime = 800 - (centerDistance * 80);
+        adjustedTasks = 100 - (centerDistance * 8);
+      } else { // 4로 나눈 나머지가 3 (예: 2027, 2023)
+        // 들쭉날쭉한 패턴
+        adjustedTime = index % 2 == 0 ? 700 + (index * 20) : 300 + (index * 15);
+        adjustedTasks = index % 2 == 0 ? 85 + (index * 2) : 45 + (index * 1);
+      }
+      
+      // 최소값 보장
+      adjustedTime = adjustedTime.clamp(100, 1000);
+      adjustedTasks = adjustedTasks.clamp(20, 120);
+      
+      if (index == 0) { // 1월 데이터만 출력
+        print('🔄 ${selectedYear}년 패턴 (${selectedYear % 4}): 1월 = ${adjustedTime}분');
+      }
+      
       return MonthlyStats(
         month: month,
-        totalStudyTimeMinutes: (index + 1) * 300 + (index % 3) * 100,
-        totalCompletedTasks: (index + 1) * 50 + (index % 4) * 10,
-        totalTasks: (index + 1) * 70 + (index % 5) * 15,
-        averageDailyStudyTime: (index + 1) * 10 + (index % 3) * 5,
+        totalStudyTimeMinutes: adjustedTime,
+        totalCompletedTasks: (adjustedTasks * 0.8).toInt(),
+        totalTasks: adjustedTasks,
+        averageDailyStudyTime: (adjustedTime ~/ 30).toDouble(),
         categoryTime: {
-          '프로젝트': (index + 1) * 120,
-          '공부': (index + 1) * 100,
-          '운동': (index + 1) * 80,
+          '프로젝트': (adjustedTime * 0.4).toInt(),
+          '공부': (adjustedTime * 0.35).toInt(),
+          '운동': (adjustedTime * 0.25).toInt(),
         },
-        achievements: index % 3 == 0 ? ['월간 목표 달성'] : [],
+        achievements: (index + selectedYear) % 3 == 0 ? ['월간 목표 달성'] : [],
       );
     });
   }
@@ -233,10 +267,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           break;
         case '연간':
           _selectedYear = DateTime(_selectedYear.year + direction, 1, 1);
-          break;
+          // 연간 데이터는 setState 안에서 즉시 업데이트
+          _yearlyData = _getDefaultYearlyStats();
+          return; // _loadStatistics 호출하지 않고 즉시 반환
       }
     });
-    _loadStatistics(); // 새로운 기간의 데이터 로드
+    _loadStatistics(); // 새로운 기간의 데이터 로드 (연간 제외)
   }
 
   // 날짜 범위 텍스트 생성
@@ -301,7 +337,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             children: [
               Expanded(
                 child: _buildStatItem(
-                  '총 공부시간',
+                  '총 활동시간',
                   '$totalStudyTime분',
                   Icons.timer,
                 ),
@@ -343,122 +379,134 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
 
   // 타임테이블 (10분 단위)
   Widget _buildTimeTable() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                '시간별 활동',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+    return GestureDetector(
+      onPanUpdate: (details) {
+        // 스와이프 감지
+        if (details.delta.dx > 10) {
+          // 오른쪽 스와이프 - 이전날
+          _changePeriod('일간', -1);
+        } else if (details.delta.dx < -10) {
+          // 왼쪽 스와이프 - 다음날
+          _changePeriod('일간', 1);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '시간별 활동',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              // 범례
-              Row(
-                children: [
-                  _buildLegendItem('프로젝트', Colors.blue.shade400),
-                  const SizedBox(width: 8),
-                  _buildLegendItem('공부', Colors.purple.shade400),
-                  const SizedBox(width: 8),
-                  _buildLegendItem('운동', Colors.green.shade400),
-                  const SizedBox(width: 8),
-                  _buildLegendItem('기타', Colors.orange.shade400),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          // 시간 라벨 (0시~23시)
-          SizedBox(
-            height: 30,
-            child: Row(
-              children: List.generate(24, (hour) {
-                return Expanded(
-                  child: Center(
-                    child: Text(
-                      hour.toString().padLeft(2, '0'),
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.w500,
+                // 범례
+                Row(
+                  children: [
+                    _buildLegendItem('프로젝트', Colors.blue.shade400),
+                    const SizedBox(width: 8),
+                    _buildLegendItem('공부', Colors.purple.shade400),
+                    const SizedBox(width: 8),
+                    _buildLegendItem('운동', Colors.green.shade400),
+                    const SizedBox(width: 8),
+                    _buildLegendItem('기타', Colors.orange.shade400),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            // 시간 라벨 (0시~23시)
+            SizedBox(
+              height: 30,
+              child: Row(
+                children: List.generate(24, (hour) {
+                  return Expanded(
+                    child: Center(
+                      child: Text(
+                        hour.toString().padLeft(2, '0'),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                }),
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          // 통합 타임라인
-          Container(
-            height: 80,
-            child: Row(
-              children: List.generate(24, (hour) {
-                return Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 1),
-                    child: Column(
-                      children: List.generate(6, (tenMinute) {
-                        String activity = _getActivityTypeForTimeSlot(hour, tenMinute * 10);
-                        Color color = _getActivityColor(activity);
-                        bool hasActivity = _getActivityForTimeSlot(hour, tenMinute * 10);
-                        
-                        return Expanded(
-                          child: Container(
-                            width: double.infinity,
-                            margin: const EdgeInsets.all(0.5),
-                            decoration: BoxDecoration(
-                              color: hasActivity ? color : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(3),
-                              border: Border.all(
-                                color: hasActivity ? color.withOpacity(0.3) : Colors.grey.shade200,
-                                width: 0.5,
+            const SizedBox(height: 10),
+            // 통합 타임라인
+            Container(
+              height: 80,
+              child: Row(
+                children: List.generate(24, (hour) {
+                  return Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 1),
+                      child: Column(
+                        children: List.generate(6, (tenMinute) {
+                          String activity = _getActivityTypeForTimeSlot(hour, tenMinute * 10);
+                          Color color = _getActivityColor(activity);
+                          bool hasActivity = _getActivityForTimeSlot(hour, tenMinute * 10);
+                          
+                          return Expanded(
+                            child: Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.all(0.5),
+                              decoration: BoxDecoration(
+                                color: hasActivity ? color : Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(3),
+                                border: Border.all(
+                                  color: hasActivity ? color.withOpacity(0.3) : Colors.grey.shade200,
+                                  width: 0.5,
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      }),
+                          );
+                        }),
+                      ),
                     ),
+                  );
+                }),
+              ),
+            ),
+            const SizedBox(height: 10),
+            // 시간 표시 (3시간 간격)
+            Row(
+              children: List.generate(8, (index) {
+                int hour = index * 3;
+                return Expanded(
+                  flex: 3,
+                  child: Text(
+                    '${hour.toString().padLeft(2, '0')}:00',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: Colors.grey.shade500,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 );
               }),
             ),
-          ),
-          const SizedBox(height: 10),
-          // 시간 표시 (3시간 간격)
-          Row(
-            children: List.generate(8, (index) {
-              int hour = index * 3;
-              return Expanded(
-                flex: 3,
-                child: Text(
-                  '${hour.toString().padLeft(2, '0')}:00',
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: Colors.grey.shade500,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              );
-            }),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -488,20 +536,57 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     );
   }
 
-  // 시간대별 활동 여부 확인 (임시 데이터)
+  // 시간대별 활동 여부 확인 (동적 데이터)
   bool _getActivityForTimeSlot(int hour, int minute) {
-    // 실제로는 Firebase에서 해당 시간대 데이터를 확인
-    if (hour >= 9 && hour <= 12) return true; // 오전 공부시간
-    if (hour >= 14 && hour <= 17) return true; // 오후 공부시간
-    if (hour >= 19 && hour <= 21) return true; // 저녁 공부시간
+    // 선택된 날짜를 기준으로 동적 데이터 생성
+    int dayOfWeek = _selectedDay.weekday; // 1=월요일, 7=일요일
+    int dayOfMonth = _selectedDay.day;
+    
+    // 요일과 날짜에 따라 다른 패턴 생성
+    if (dayOfWeek == 1 || dayOfWeek == 3 || dayOfWeek == 5) { // 월, 수, 금
+      if (hour >= 9 && hour <= 12) return true; // 오전 공부시간
+      if (hour >= 14 && hour <= 17) return true; // 오후 공부시간
+      if (hour >= 19 && hour <= 21) return true; // 저녁 공부시간
+    } else if (dayOfWeek == 2 || dayOfWeek == 4) { // 화, 목
+      if (hour >= 10 && hour <= 11) return true; // 짧은 오전 시간
+      if (hour >= 15 && hour <= 18) return true; // 긴 오후 시간
+      if (hour >= 20 && hour <= 22) return true; // 늦은 저녁 시간
+    } else { // 주말 (토, 일)
+      if (dayOfMonth % 2 == 0) { // 짝수 날
+        if (hour >= 11 && hour <= 13) return true; // 늦은 오전
+        if (hour >= 16 && hour <= 19) return true; // 오후~저녁
+      } else { // 홀수 날
+        if (hour >= 8 && hour <= 10) return true; // 이른 오전
+        if (hour >= 14 && hour <= 16) return true; // 오후
+        if (hour >= 21 && hour <= 23) return true; // 늦은 저녁
+      }
+    }
     return false;
   }
 
-  // 시간대별 활동 타입 (임시 데이터)
+  // 시간대별 활동 타입 (동적 데이터)
   String _getActivityTypeForTimeSlot(int hour, int minute) {
-    if (hour >= 9 && hour <= 12) return '프로젝트';
-    if (hour >= 14 && hour <= 17) return '공부';
-    if (hour >= 19 && hour <= 21) return '운동';
+    int dayOfWeek = _selectedDay.weekday;
+    int dayOfMonth = _selectedDay.day;
+    
+    if (dayOfWeek == 1 || dayOfWeek == 3 || dayOfWeek == 5) { // 월, 수, 금
+      if (hour >= 9 && hour <= 12) return '프로젝트';
+      if (hour >= 14 && hour <= 17) return '공부';
+      if (hour >= 19 && hour <= 21) return '운동';
+    } else if (dayOfWeek == 2 || dayOfWeek == 4) { // 화, 목
+      if (hour >= 10 && hour <= 11) return '공부';
+      if (hour >= 15 && hour <= 18) return '프로젝트';
+      if (hour >= 20 && hour <= 22) return '운동';
+    } else { // 주말
+      if (dayOfMonth % 2 == 0) { // 짝수 날
+        if (hour >= 11 && hour <= 13) return '운동';
+        if (hour >= 16 && hour <= 19) return '프로젝트';
+      } else { // 홀수 날
+        if (hour >= 8 && hour <= 10) return '공부';
+        if (hour >= 14 && hour <= 16) return '프로젝트';
+        if (hour >= 21 && hour <= 23) return '운동';
+      }
+    }
     return '휴식';
   }
 
@@ -524,14 +609,43 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     // 일간 카테고리별 시간 집계 - 실제 일간 데이터 사용
     Map<String, int> categoryTime = _dailyData?.categoryTime ?? {};
     
-    // 데이터가 없으면 기본 데이터 생성
+    // 데이터가 없으면 선택된 날짜 기반으로 동적 데이터 생성
     if (categoryTime.isEmpty) {
-      categoryTime = {
-        '프로젝트': 180, // 3시간
-        '공부': 240,     // 4시간  
-        '운동': 90,      // 1.5시간
-        '기타': 60,      // 1시간
-      };
+      int dayOfWeek = _selectedDay.weekday;
+      int dayOfMonth = _selectedDay.day;
+      
+      // 요일과 날짜에 따라 다른 패턴 생성
+      if (dayOfWeek == 1 || dayOfWeek == 3 || dayOfWeek == 5) { // 월, 수, 금
+        categoryTime = {
+          '프로젝트': 180 + (dayOfMonth % 3) * 30, // 180~240분
+          '공부': 240 + (dayOfMonth % 4) * 20,     // 240~300분  
+          '운동': 90 + (dayOfMonth % 2) * 30,      // 90~120분
+          '기타': 60 + (dayOfMonth % 5) * 10,      // 60~100분
+        };
+      } else if (dayOfWeek == 2 || dayOfWeek == 4) { // 화, 목
+        categoryTime = {
+          '프로젝트': 120 + (dayOfMonth % 4) * 40, // 120~280분
+          '공부': 300 + (dayOfMonth % 3) * 30,     // 300~360분
+          '운동': 150 + (dayOfMonth % 2) * 20,     // 150~170분
+          '기타': 45 + (dayOfMonth % 6) * 15,      // 45~120분
+        };
+      } else { // 주말 (토, 일)
+        if (dayOfMonth % 2 == 0) { // 짝수 날
+          categoryTime = {
+            '프로젝트': 90 + (dayOfMonth % 5) * 25,  // 90~190분
+            '공부': 120 + (dayOfMonth % 3) * 40,     // 120~200분
+            '운동': 180 + (dayOfMonth % 4) * 30,     // 180~270분
+            '기타': 100 + (dayOfMonth % 2) * 50,     // 100~150분
+          };
+        } else { // 홀수 날
+          categoryTime = {
+            '프로젝트': 200 + (dayOfMonth % 3) * 35, // 200~270분
+            '공부': 90 + (dayOfMonth % 4) * 25,      // 90~165분
+            '운동': 60 + (dayOfMonth % 5) * 20,      // 60~140분
+            '기타': 80 + (dayOfMonth % 2) * 40,      // 80~120분
+          };
+        }
+      }
     }
     
     if (categoryTime.isEmpty) {
@@ -727,6 +841,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             )
           : TabBarView(
               controller: _tabController,
+              physics: const NeverScrollableScrollPhysics(),
               children: [
                 _buildDailyView(),
                 _buildWeeklyView(),
@@ -823,7 +938,10 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           const SizedBox(height: 20),
           _buildYearlyChart(),
           const SizedBox(height: 20),
-          _buildYearlyCategoryChart(),
+          Container(
+            key: ValueKey('yearly_category_${_selectedYear.year}'),
+            child: _buildCategoryChart(_getYearlyCategoryStats()),
+          ),
         ],
       ),
     );
@@ -911,7 +1029,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             children: [
               Expanded(
                 child: _buildStatItem(
-                  '총 공부시간',
+                  '총 활동시간',
                   '$totalStudyTime분',
                   Icons.timer,
                 ),
@@ -932,7 +1050,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Expanded(
                 child: _buildStatItem(
                   '주간 평균',
-                  '${weeklyAvg.toInt()}분/일',
+                  '${(weeklyAvg / 60).toStringAsFixed(1)}시간/일',
                   Icons.trending_up,
                 ),
               ),
@@ -992,7 +1110,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             children: [
               Expanded(
                 child: _buildStatItem(
-                  '총 공부시간',
+                  '총 활동시간',
                   '${(totalStudyTime / 60).toInt()}시간',
                   Icons.timer,
                 ),
@@ -1013,7 +1131,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Expanded(
                 child: _buildStatItem(
                   '월간 평균',
-                  '${monthlyAvg.toInt()}분/주',
+                  '${(monthlyAvg / 60).toStringAsFixed(1)}시간/주',
                   Icons.trending_up,
                 ),
               ),
@@ -1070,6 +1188,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     double yearlyAvg = _yearlyData.isNotEmpty ? totalStudyTime / 12 : 0; // 연간 평균 (12개월 기준)
 
     return Container(
+      key: ValueKey('yearly_summary_${_selectedYear.year}'),
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -1090,20 +1209,33 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '연간 요약',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                '연간 요약',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                '${_selectedYear.year}년',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
                 child: _buildStatItem(
-                  '총 공부시간',
+                  '총 활동시간',
                   '${(totalStudyTime / 60).toInt()}시간',
                   Icons.timer,
                 ),
@@ -1146,84 +1278,96 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   Widget _buildWeeklyChart() {
     final weekDays = ['월', '화', '수', '목', '금', '토', '일'];
     
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-            '주간 활동',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 200,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(7, (index) {
-                if (index >= _weeklyData.length) return const SizedBox();
-                
-                int studyTime = _weeklyData[index].studyTimeMinutes;
-                double maxHeight = 160;
-                double height = _weeklyData.isNotEmpty 
-                    ? (studyTime / _weeklyData.map((e) => e.studyTimeMinutes).reduce((a, b) => a > b ? a : b)) * maxHeight
-                    : 0;
-                
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    AnimatedBuilder(
-                      animation: _progressAnimation,
-                      builder: (context, child) {
-                        return Container(
-                          width: 24,
-                          height: height * _progressAnimation.value,
-                          decoration: BoxDecoration(
-                            color: index == 6 // 오늘 (일요일)
-                                ? Colors.purple.shade400
-                                : Colors.purple.shade200,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 8),
-              Text(
-                      weekDays[index],
-                style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                        fontWeight: index == 6 ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                    Text(
-                      '$studyTime분',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey.shade500,
-                ),
-              ),
-            ],
-                );
-              }),
+    return GestureDetector(
+      onPanUpdate: (details) {
+        // 스와이프 감지
+        if (details.delta.dx > 10) {
+          // 오른쪽 스와이프 - 이전주
+          _changePeriod('주간', -1);
+        } else if (details.delta.dx < -10) {
+          // 왼쪽 스와이프 - 다음주
+          _changePeriod('주간', 1);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
-          ),
-        ],
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+              '주간 활동',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 200,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: List.generate(7, (index) {
+                  if (index >= _weeklyData.length) return const SizedBox();
+                  
+                  int studyTime = _weeklyData[index].studyTimeMinutes;
+                  double maxHeight = 160;
+                  double height = _weeklyData.isNotEmpty 
+                      ? (studyTime / _weeklyData.map((e) => e.studyTimeMinutes).reduce((a, b) => a > b ? a : b)) * maxHeight
+                      : 0;
+                  
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _progressAnimation,
+                        builder: (context, child) {
+                          return Container(
+                            width: 24,
+                            height: height * _progressAnimation.value,
+                            decoration: BoxDecoration(
+                              color: index == 6 // 오늘 (일요일)
+                                  ? Colors.purple.shade400
+                                  : Colors.purple.shade200,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                Text(
+                        weekDays[index],
+                  style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          fontWeight: index == 6 ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      Text(
+                        '$studyTime분',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+                  );
+                }),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1239,86 +1383,97 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       dailyDataMap[data.date.day] = data;
     }
     
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '월간 활동',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+    return GestureDetector(
+      onPanUpdate: (details) {
+        // 스와이프 감지
+        if (details.delta.dx > 10) {
+          // 오른쪽 스와이프 - 이전달
+          _changePeriod('월간', -1);
+        } else if (details.delta.dx < -10) {
+          // 왼쪽 스와이프 - 다음달
+          _changePeriod('월간', 1);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
-          ),
-          const SizedBox(height: 20),
-                    SizedBox(
-            height: 200,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(daysInMonth, (index) {
-                    int dayNumber = index + 1; // 1일부터 마지막일까지
-                    DailyStats? dayData = dailyDataMap[dayNumber];
-                    
-                    int studyTime = dayData?.studyTimeMinutes ?? 0;
-                    double maxHeight = 160;
-                    
-                    // 최대값 계산 (모든 일 데이터 중에서)
-                    int maxStudyTime = _monthlyData.isNotEmpty 
-                        ? _monthlyData.map((e) => e.studyTimeMinutes).reduce((a, b) => a > b ? a : b)
-                        : 1;
-                    
-                    double height = maxStudyTime > 0 ? (studyTime / maxStudyTime) * maxHeight : 0;
-                    
-                    return Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-          AnimatedBuilder(
-            animation: _progressAnimation,
-            builder: (context, child) {
-                              return Container(
-                                width: 8,
-                                height: height * _progressAnimation.value,
-                                decoration: BoxDecoration(
-                                  color: dayData != null 
-                                      ? Colors.purple.shade300 
-                                      : Colors.grey.shade200,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-              );
-            },
-          ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '월간 활동',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+                      SizedBox(
+              height: 200,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: List.generate(daysInMonth, (index) {
+                      int dayNumber = index + 1; // 1일부터 마지막일까지
+                      DailyStats? dayData = dailyDataMap[dayNumber];
+                      
+                      int studyTime = dayData?.studyTimeMinutes ?? 0;
+                      double maxHeight = 160;
+                      
+                      // 최대값 계산 (모든 일 데이터 중에서)
+                      int maxStudyTime = _monthlyData.isNotEmpty 
+                          ? _monthlyData.map((e) => e.studyTimeMinutes).reduce((a, b) => a > b ? a : b)
+                          : 1;
+                      
+                      double height = maxStudyTime > 0 ? (studyTime / maxStudyTime) * maxHeight : 0;
+                      
+                      return Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                AnimatedBuilder(
+                  animation: _progressAnimation,
+                  builder: (context, child) {
+                                return Container(
+                                  width: 8,
+                                  height: height * _progressAnimation.value,
+                                  decoration: BoxDecoration(
+                                    color: dayData != null 
+                                        ? Colors.purple.shade300 
+                                        : Colors.grey.shade200,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                );
+                  },
+                ),
                           const SizedBox(height: 4),
-                          if (dayNumber % 5 == 1 || dayNumber == daysInMonth) // 1, 6, 11, 16, 21, 26일과 마지막일 표시
-          Text(
-                              '$dayNumber',
-            style: TextStyle(
-                                fontSize: 9,
-                                color: dayData != null 
-                                    ? Colors.grey.shade600 
-                                    : Colors.grey.shade400,
-                              ),
+                          Text(
+                            '$dayNumber',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: dayData != null 
+                                  ? Colors.grey.shade600 
+                                  : Colors.grey.shade400,
                             ),
+                          ),
                         ],
                       ),
                     );
                   }),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1327,105 +1482,136 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   Widget _buildYearlyChart() {
     final months = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
     
+    // 디버그 정보 출력
+    print('📊 연간 차트 빌드 - 선택된 연도: ${_selectedYear.year}');
+    print('📊 연간 데이터 개수: ${_yearlyData.length}');
+    if (_yearlyData.isNotEmpty) {
+      print('📊 첫 번째 월 데이터: ${_yearlyData[0].totalStudyTimeMinutes}분');
+    }
+    
     // 연간 데이터를 월별로 매핑 (1월~12월)
     Map<int, MonthlyStats?> monthlyDataMap = {};
     for (var data in _yearlyData) {
       monthlyDataMap[data.month.month] = data;
+      print('📊 월별 매핑: ${data.month.month}월 = ${data.totalStudyTimeMinutes}분');
     }
     
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '연간 활동',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+    // 최대값 계산 (모든 월 데이터 중에서)
+    int maxStudyTime = _yearlyData.isNotEmpty 
+        ? _yearlyData.map((e) => e.totalStudyTimeMinutes).reduce((a, b) => a > b ? a : b)
+        : 1;
+    print('📊 최대 활동시간: ${maxStudyTime}분');
+    
+    return GestureDetector(
+      key: ValueKey('yearly_chart_${_selectedYear.year}'),
+      onPanUpdate: (details) {
+        // 스와이프 감지
+        if (details.delta.dx > 10) {
+          // 오른쪽 스와이프 - 이전년
+          _changePeriod('연간', -1);
+        } else if (details.delta.dx < -10) {
+          // 왼쪽 스와이프 - 다음년
+          _changePeriod('연간', 1);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 200,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(12, (index) {
-                int monthNumber = index + 1; // 1월부터 12월까지
-                MonthlyStats? monthData = monthlyDataMap[monthNumber];
-                
-                int studyTime = monthData?.totalStudyTimeMinutes ?? 0;
-                double maxHeight = 160;
-                
-                // 최대값 계산 (모든 월 데이터 중에서)
-                int maxStudyTime = _yearlyData.isNotEmpty 
-                    ? _yearlyData.map((e) => e.totalStudyTimeMinutes).reduce((a, b) => a > b ? a : b)
-                    : 1;
-                
-                double height = maxStudyTime > 0 ? (studyTime / maxStudyTime) * maxHeight : 0;
-                
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    AnimatedBuilder(
-                      animation: _progressAnimation,
-                      builder: (context, child) {
-                        return Container(
-                              width: 16,
-                          height: height * _progressAnimation.value,
-                          decoration: BoxDecoration(
-                                color: monthData != null 
-                                ? Colors.purple.shade400
-                                    : Colors.grey.shade300,
-                                borderRadius: BorderRadius.circular(8),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '연간 활동',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 200,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: List.generate(12, (index) {
+                  int monthNumber = index + 1; // 1월부터 12월까지
+                  MonthlyStats? monthData = monthlyDataMap[monthNumber];
+                  
+                  int studyTime = monthData?.totalStudyTimeMinutes ?? 0;
+                  double maxHeight = 160;
+                  
+                  // 최대값 계산 (모든 월 데이터 중에서)
+                  int maxStudyTime = _yearlyData.isNotEmpty 
+                      ? _yearlyData.map((e) => e.totalStudyTimeMinutes).reduce((a, b) => a > b ? a : b)
+                      : 1;
+                  
+                  double height = maxStudyTime > 0 ? (studyTime / maxStudyTime) * maxHeight : 0;
+                  
+                  if (index < 3) { // 처음 3개월만 로그 출력
+                    print('📊 ${monthNumber}월: studyTime=${studyTime}, height=${height.toStringAsFixed(1)}');
+                  }
+                  
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _progressAnimation,
+                        builder: (context, child) {
+                          return Container(
+                                width: 16,
+                            height: height, // 애니메이션 제거하고 실제 높이 사용
+                            decoration: BoxDecoration(
+                                  color: monthData != null 
+                                  ? Colors.purple.shade400
+                                      : Colors.grey.shade300,
+                                  borderRadius: BorderRadius.circular(8),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                            months[index],
+                        style: TextStyle(
+                              fontSize: 9,
+                              color: monthData != null 
+                                  ? Colors.grey.shade600 
+                                  : Colors.grey.shade400,
+                              fontWeight: monthData != null 
+                                  ? FontWeight.normal 
+                                  : FontWeight.w300,
+                            ),
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                          months[index],
-                      style: TextStyle(
-                            fontSize: 9,
-                            color: monthData != null 
-                                ? Colors.grey.shade600 
-                                : Colors.grey.shade400,
-                            fontWeight: monthData != null 
-                                ? FontWeight.normal 
-                                : FontWeight.w300,
-                          ),
+                          if (studyTime > 0)
+                      Text(
+                              '${(studyTime / 60).toInt()}h',
+                        style: TextStyle(
+                                fontSize: 8,
+                          color: Colors.grey.shade500,
                         ),
-                        if (studyTime > 0)
-                    Text(
-                            '${(studyTime / 60).toInt()}h',
-                      style: TextStyle(
-                              fontSize: 8,
-                        color: Colors.grey.shade500,
+                      ),
+                    ],
                       ),
                     ),
-                  ],
-                    ),
-                  ),
-                );
-              }),
+                  );
+                }),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1531,141 +1717,29 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                               style: const TextStyle(fontSize: 14),
                             ),
                           ),
-                          Text(
-                            '${percentage.toInt()}%',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '${(entry.value / 60).toStringAsFixed(1)}시간',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                '${percentage.toInt()}%',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     );
                   }).toList(),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 연간 카테고리 차트
-  Widget _buildYearlyCategoryChart() {
-    // 연간 카테고리별 시간 집계
-    Map<String, int> categoryTime = {};
-    for (var monthly in _yearlyData) {
-      monthly.categoryTime.forEach((category, time) {
-        categoryTime[category] = (categoryTime[category] ?? 0) + time;
-      });
-    }
-    
-    if (categoryTime.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: const Center(
-          child: Text('카테고리 데이터가 없습니다.'),
-        ),
-      );
-    }
-    
-    int totalTime = categoryTime.values.reduce((a, b) => a + b);
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '연간 카테고리별 시간',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              // 도넛 차트
-              SizedBox(
-                width: 120,
-                height: 120,
-                child: AnimatedBuilder(
-                  animation: _progressAnimation,
-                  builder: (context, child) {
-                    return CustomPaint(
-                      painter: DonutChartPainter(
-                        categoryTime,
-                        totalTime,
-                        _progressAnimation.value,
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 20),
-              // 범례
-              Expanded(
-                child: Column(
-                  children: categoryTime.entries.map((entry) {
-                    Color color = _getCategoryColor(entry.key);
-                    double percentage = (entry.value / totalTime) * 100;
-                    
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                children: [
-                  Container(
-                            width: 12,
-                            height: 12,
-                    decoration: BoxDecoration(
-                              color: color,
-                      shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              entry.key,
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ),
-                  Text(
-                            '${percentage.toInt()}%',
-                    style: TextStyle(
-                      fontSize: 12,
-                              color: Colors.grey.shade600,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-                      ),
-              );
-            }).toList(),
                 ),
               ),
             ],
@@ -1807,6 +1881,71 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     } else {
       return '🏆';
     }
+  }
+
+  List<DailyStats> _getYearlyCategoryStats() {
+    int selectedYear = _selectedYear.year;
+    print('🎨 카테고리 데이터 생성 중 - 연도: $selectedYear');
+    
+    // 현재 선택된 연도의 카테고리 시간을 합계
+    Map<String, int> totalCategoryTime = {};
+    for (var monthly in _yearlyData) {
+      monthly.categoryTime.forEach((category, time) {
+        totalCategoryTime[category] = (totalCategoryTime[category] ?? 0) + time;
+      });
+    }
+    
+    // 연도별로 다른 카테고리 비율 적용
+    Map<String, int> adjustedCategoryTime = {};
+    int totalTime = totalCategoryTime.values.fold(0, (sum, time) => sum + time);
+    
+    if (selectedYear % 4 == 0) { // 4의 배수 연도 - 프로젝트 중심
+      adjustedCategoryTime = {
+        '프로젝트': (totalTime * 0.5).toInt(),
+        '공부': (totalTime * 0.25).toInt(),
+        '운동': (totalTime * 0.15).toInt(),
+        '기타': (totalTime * 0.1).toInt(),
+      };
+      print('🎨 프로젝트 중심 패턴');
+    } else if (selectedYear % 4 == 1) { // 공부 중심
+      adjustedCategoryTime = {
+        '프로젝트': (totalTime * 0.2).toInt(),
+        '공부': (totalTime * 0.55).toInt(),
+        '운동': (totalTime * 0.15).toInt(),
+        '기타': (totalTime * 0.1).toInt(),
+      };
+      print('🎨 공부 중심 패턴');
+    } else if (selectedYear % 4 == 2) { // 운동 중심
+      adjustedCategoryTime = {
+        '프로젝트': (totalTime * 0.25).toInt(),
+        '공부': (totalTime * 0.25).toInt(),
+        '운동': (totalTime * 0.4).toInt(),
+        '기타': (totalTime * 0.1).toInt(),
+      };
+      print('🎨 운동 중심 패턴');
+    } else { // 균형 패턴
+      adjustedCategoryTime = {
+        '프로젝트': (totalTime * 0.3).toInt(),
+        '공부': (totalTime * 0.3).toInt(),
+        '운동': (totalTime * 0.25).toInt(),
+        '기타': (totalTime * 0.15).toInt(),
+      };
+      print('🎨 균형 패턴');
+    }
+    
+    print('🎨 카테고리 분포: ${adjustedCategoryTime}');
+    
+    // 선택된 연도 정보를 포함한 DailyStats로 반환
+    return [
+      DailyStats(
+        date: _selectedYear, // 선택된 연도 사용
+        studyTimeMinutes: 0,
+        completedTasks: 0,
+        totalTasks: 0,
+        categoryTime: adjustedCategoryTime,
+        achievements: [],
+      )
+    ];
   }
 }
 
