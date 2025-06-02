@@ -1068,7 +1068,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          _buildDateSelector('일간'),
+          _buildDateSelector(),
           const SizedBox(height: 16),
           _buildAchievementBadges(_dailyAchievements, '일간'),
           _buildDailySummaryCard(),
@@ -1092,7 +1092,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildDateSelector('주간'),
+          _buildDateSelector(),
           const SizedBox(height: 16),
           _buildAchievementBadges(_weeklyAchievements, '주간'),
           _buildWeeklySummaryCard(),
@@ -1116,7 +1116,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildDateSelector('월간'),
+          _buildDateSelector(),
           const SizedBox(height: 16),
           _buildAchievementBadges(_monthlyAchievements, '월간'),
           _buildMonthlySummaryCard(),
@@ -1140,7 +1140,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildDateSelector('연간'),
+          _buildDateSelector(),
           const SizedBox(height: 16),
           _buildAchievementBadges(_yearlyAchievements, '연간'),
           _buildYearlySummaryCard(),
@@ -1157,16 +1157,21 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   }
 
   // 날짜 선택기 - 더 직관적인 UI로 개선
-  Widget _buildDateSelector(String period) {
+  Widget _buildDateSelector() {
+    final now = DateTime.now();
+    final startOfWeek = _selectedWeek.subtract(Duration(days: _selectedWeek.weekday - 1));
+    final endOfWeek = startOfWeek.add(const Duration(days: 6));
+    
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 3,
             offset: const Offset(0, 2),
           ),
         ],
@@ -1174,89 +1179,32 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // 이전 버튼
           IconButton(
-            onPressed: () => _changePeriod(period, -1),
             icon: const Icon(Icons.chevron_left),
-            color: Colors.purple.shade600,
-            tooltip: _getPreviousTooltip(period),
+            onPressed: () {
+              setState(() {
+                _selectedWeek = _selectedWeek.subtract(const Duration(days: 7));
+                _loadStatistics();
+              });
+            },
           ),
-          // 날짜 텍스트 + 오늘로 가기 버튼
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                GestureDetector(
-                  onTap: () => _showDatePicker(period),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.purple.shade200),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.calendar_today,
-                          size: 16,
-                          color: Colors.purple.shade600,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          _getDateRangeText(period),
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.purple.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (!_isToday(period)) ...[
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _goToToday(period),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.today,
-                            size: 14,
-                            color: Colors.purple.shade600,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '오늘',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.purple.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+          Text(
+            '${DateFormat('MM/dd').format(startOfWeek)} - ${DateFormat('MM/dd').format(endOfWeek)}',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          // 다음 버튼 (미래는 오늘까지만)
           IconButton(
-            onPressed: _canGoNext(period) ? () => _changePeriod(period, 1) : null,
             icon: const Icon(Icons.chevron_right),
-            color: _canGoNext(period) ? Colors.purple.shade600 : Colors.grey.shade300,
-            tooltip: _canGoNext(period) ? _getNextTooltip(period) : '미래 날짜는 선택할 수 없습니다',
+            onPressed: () {
+              if (_selectedWeek.isBefore(now)) {
+                setState(() {
+                  _selectedWeek = _selectedWeek.add(const Duration(days: 7));
+                  _loadStatistics();
+                });
+              }
+            },
           ),
         ],
       ),

@@ -5,15 +5,23 @@ import 'dart:math';
 class StatisticsService {
   static final StatisticsService _instance = StatisticsService._internal();
   factory StatisticsService() => _instance;
+  
+  FirebaseFirestore? _firestore;
+  
   StatisticsService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  // Firebase 초기화 메서드
+  void initialize(FirebaseFirestore firestoreInstance) {
+    _firestore = firestoreInstance;
+  }
 
   // Firebase 사용 가능 여부 확인
   Future<bool> _isFirebaseAvailable() async {
+    if (_firestore == null) return false;
+    
     try {
       // 간단한 연결 테스트
-      QuerySnapshot testSnapshot = await _firestore
+      QuerySnapshot testSnapshot = await _firestore!
           .collection('todos')
           .limit(1)
           .get()
@@ -34,7 +42,7 @@ class StatisticsService {
       print('🔄 Firebase에서 일일 통계 로드: $dateKey');
       
       // 1. 기존 통계 데이터 확인
-      DocumentSnapshot dailyDoc = await _firestore
+      DocumentSnapshot dailyDoc = await _firestore!
           .collection('statistics')
           .doc('daily')
           .collection('data')
@@ -42,7 +50,7 @@ class StatisticsService {
           .get();
       
       // 2. 모든 todos 가져와서 클라이언트에서 필터링
-      QuerySnapshot todosSnapshot = await _firestore
+      QuerySnapshot todosSnapshot = await _firestore!
           .collection('todos')
           .get();
       
@@ -139,7 +147,7 @@ class StatisticsService {
       print('   카테고리별: $categoryTime');
       
       // 6. Firebase에 새로운 통계 저장 (기존 데이터 덮어쓰기)
-      await _firestore
+      await _firestore!
           .collection('statistics')
           .doc('daily')
           .collection('data')
@@ -219,7 +227,7 @@ class StatisticsService {
       print('🔄 Firebase 주간 통계 데이터 로드 (todos에서 isCompleted만)');
       
       // todos 컬렉션에서 모든 데이터 가져오기
-      QuerySnapshot todosSnapshot = await _firestore
+      QuerySnapshot todosSnapshot = await _firestore!
           .collection('todos')
           .get();
       
@@ -331,7 +339,7 @@ class StatisticsService {
       print('🔄 Firebase 월간 통계 데이터 로드 (todos에서 isCompleted만)');
       
       // todos 컬렉션에서 모든 데이터 가져오기
-      QuerySnapshot todosSnapshot = await _firestore
+      QuerySnapshot todosSnapshot = await _firestore!
           .collection('todos')
           .get();
       
@@ -441,7 +449,7 @@ class StatisticsService {
       print('🔄 Firebase 연간 통계 데이터 로드 (todos에서 isCompleted만)');
       
       // todos 컬렉션에서 모든 데이터 가져오기
-      QuerySnapshot todosSnapshot = await _firestore
+      QuerySnapshot todosSnapshot = await _firestore!
           .collection('todos')
           .get();
       
@@ -628,7 +636,9 @@ class StatisticsService {
   Future<List<String>> getCategories() async {
     try {
       if (await _isFirebaseAvailable()) {
-        QuerySnapshot snapshot = await _firestore.collection('categories').get();
+        QuerySnapshot snapshot = await _firestore!
+            .collection('categories')
+            .get();
         List<String> categories = [];
         for (QueryDocumentSnapshot doc in snapshot.docs) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
@@ -659,7 +669,7 @@ class StatisticsService {
       print('🔄 Firebase 특정 주간 통계 데이터 로드: ${DateFormat('yyyy.MM.dd').format(startOfWeek)} - ${DateFormat('yyyy.MM.dd').format(endOfWeek)}');
       
       // todos 컬렉션에서 모든 데이터 가져오기
-      QuerySnapshot todosSnapshot = await _firestore
+      QuerySnapshot todosSnapshot = await _firestore!
           .collection('todos')
           .get();
       
@@ -757,7 +767,7 @@ class StatisticsService {
       print('🔄 Firebase 특정 월간 통계 데이터 로드: ${DateFormat('yyyy년 MM월').format(selectedMonth)}');
       
       // todos 컬렉션에서 모든 데이터 가져오기
-      QuerySnapshot todosSnapshot = await _firestore
+      QuerySnapshot todosSnapshot = await _firestore!
           .collection('todos')
           .get();
       
@@ -852,7 +862,7 @@ class StatisticsService {
       print('🔄 Firebase 특정 연간 통계 데이터 로드: ${year}년');
       
       // todos 컬렉션에서 모든 데이터 가져오기
-      QuerySnapshot todosSnapshot = await _firestore
+      QuerySnapshot todosSnapshot = await _firestore!
           .collection('todos')
           .get();
       

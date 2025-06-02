@@ -1,14 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'pages/statistics_page.dart';
 import 'pages/simple_home_page.dart';
+import 'services/firestore_todo_service.dart';
+import 'services/statistics_service.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('✅ Firebase 연결 성공!');
+    
+    // Firestore 및 서비스 초기화
+    final firestore = FirebaseFirestore.instance;
+    FirestoreTodoService().initialize(firestore);
+    StatisticsService().initialize(firestore);
+    print('✅ 서비스 초기화 완료!');
+  } catch (e) {
+    print('❌ Firebase 초기화 오류: $e');
+  }
+  
   runApp(const MyApp());
 }
 
@@ -76,4 +92,4 @@ class _MainTabPageState extends State<MainTabPage> {
       ),
     );
   }
-}
+} 
