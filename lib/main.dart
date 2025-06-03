@@ -20,9 +20,32 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'ThinQ 스터디 플래너',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.pink),
-        useMaterial3: false,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.black,
+          brightness: Brightness.light,
+          primary: Colors.black,
+          secondary: Colors.grey.shade700,
+          surface: Colors.white,
+          background: Colors.grey.shade50,
+        ),
+        useMaterial3: true,
         fontFamily: 'Pretendard',
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+          ),
+        ),
+        cardTheme: CardThemeData(
+          color: Colors.white,
+          elevation: 2,
+          shadowColor: Colors.black.withOpacity(0.1),
+        ),
       ),
       home: const MainTabPage(),
       debugShowCheckedModeBanner: false,
@@ -59,8 +82,8 @@ class _MainTabPageState extends State<MainTabPage> {
             _currentIndex = index;
           });
         },
-        selectedItemColor: Colors.pink.shade600,
-        unselectedItemColor: Colors.grey.shade600,
+        selectedItemColor: Colors.black,
+        unselectedItemColor: Colors.grey.shade400,
         backgroundColor: Colors.white,
         elevation: 8,
         items: const [
