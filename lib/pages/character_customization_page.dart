@@ -304,29 +304,16 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
     }
   }
   
-  // 스테이블 디퓨전을 통한 아바타 이미지 생성
-  Future<void> _generateCharacterAvatar() async {
-    if (_isGeneratingAvatar) return;
-    
-    String prompt = _avatarPromptController.text.trim();
-    if (prompt.isEmpty) {
-      // 캐릭터 타입 기반으로 프롬프트 생성
-      switch (widget.character.characterType) {
-        case 'ENFJ':
-          prompt = "코치 캐릭터, 열정적인, 긍정적인";
-          break;
-        case 'INTJ':
-          prompt = "전략가 캐릭터, 분석적인, 논리적인";
-          break;
-        case 'INFP':
-          prompt = "꿈꾸는 작가, 창의적인, 공감하는";
-          break;
-        case 'ENTJ':
-          prompt = "리더 캐릭터, 대담한, 카리스마있는";
-          break;
-        default:
-          prompt = "캐릭터, 친근한, 도움을 주는";
-      }
+  // 아바타 생성 함수 (프롬프트 기반)
+  Future<void> _generateAvatar(String prompt) async {
+    if (prompt.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('프롬프트를 입력해주세요'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
     }
     
     setState(() {
@@ -334,48 +321,52 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
     });
     
     try {
-     
-      String englishPrompt = "character, 2-head-tall chibi with big head small body, ${prompt}, cute maplestory game style, digital art, full body, white background, high quality, vibrant colors, clean lineart";
+      String enhancedPrompt = "character, 2-head-tall chibi with big head small body, ${prompt}, cute maplestory game style, digital art, full body, white background, high quality, vibrant colors, clean lineart";
       
-      // Replicate API 호출 (Stable Diffusion API)
+      // 사용자 서버 API 호출 (localhost:5050)
       final response = await http.post(
-        Uri.parse('https://api.replicate.com/v1/predictions'),
+        Uri.parse('http://localhost:5050/generate/prompt'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Token r8_MWRDaIV2Nd0REwIjv5EiInbW1xtsFoC4RGVJE', // 실제 운영환경에서는 환경변수로 관리해야 함
         },
         body: jsonEncode({
-          'version': 'ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4',
-          'input': {
-            'prompt': englishPrompt,
-            'width': 512,
-            'height': 768, // 세로로 더 길게 설정하여 전신 캐릭터 생성
-            'num_outputs': 1,
-            'guidance_scale': 7.5,
-            'num_inference_steps': 50,
-          },
+          'prompt': enhancedPrompt,
+          'style': 'anime',
         }),
       );
 
-      if (response.statusCode == 201) {
+      if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final String predictionId = data['id'];
         
-        // 이미지 생성이 완료될 때까지 폴링
-        await _checkImageGenerationStatus(predictionId);
+        if (data['success'] == true && data['image_url'] != null) {
+          final String imageUrl = data['image_url'];
+          final String characterId = data['character_id'] ?? '';
+          final String message = data['message'] ?? '캐릭터가 생성되었습니다!';
+          
+          if (mounted) {
+            setState(() {
+              _generatedAvatarUrl = imageUrl;
+              _isGeneratingAvatar = false;
+              
+              // 캐릭터 객체에 네트워크 이미지 URL 업데이트
+              _customizedCharacter = _customizedCharacter!.copyWith(
+                networkImageUrl: imageUrl,
+              );
+            });
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(message),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else {
+          throw Exception(data['error'] ?? '캐릭터 생성에 실패했습니다');
+        }
       } else {
         print('API 호출 실패: ${response.statusCode} ${response.body}');
-        if (mounted) {
-          setState(() {
-            _isGeneratingAvatar = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('캐릭터 생성 실패: API 응답 코드 ${response.statusCode}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        throw Exception('서버 응답 오류: ${response.statusCode}');
       }
     } catch (e) {
       print('캐릭터 생성 오류: $e');
@@ -385,7 +376,7 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('네트워크 오류: 인터넷 연결을 확인해주세요\n$e'),
+            content: Text('캐릭터 생성 실패: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -393,91 +384,80 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
     }
   }
   
-  // 이미지 생성 상태 확인
-  Future<void> _checkImageGenerationStatus(String predictionId) async {
-    bool isCompleted = false;
-    int retryCount = 0;
-    const maxRetries = 30; // 최대 30번 시도 (약 5분)
-
-    while (!isCompleted && retryCount < maxRetries) {
-      try {
-        final response = await http.get(
-          Uri.parse('https://api.replicate.com/v1/predictions/$predictionId'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Token r8_MWRDaIV2Nd0REwIjv5EiInbW1xtsFoC4RGVJE',
-          },
-        );
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          
-          if (data['status'] == 'succeeded') {
-            isCompleted = true;
-            final List<dynamic> outputs = data['output'];
-            
-            if (outputs.isNotEmpty && outputs[0] is String) {
-              final String imageUrl = outputs[0];
-              
-              if (mounted) {
-                setState(() {
-                  _generatedAvatarUrl = imageUrl;
-                  _isGeneratingAvatar = false;
-                  
-                  // 캐릭터 객체에 네트워크 이미지 URL 업데이트
-                  _customizedCharacter = _customizedCharacter!.copyWith(
-                    networkImageUrl: imageUrl,
-                  );
-                });
-                
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('아바타가 성공적으로 생성되었습니다!'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-            }
-          } else if (data['status'] == 'failed') {
-            print('이미지 생성 실패: ${data['error'] ?? "알 수 없는 오류"}');
-            isCompleted = true;
-            if (mounted) {
-              setState(() {
-                _isGeneratingAvatar = false;
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('캐릭터 생성 실패: ${data['error'] ?? "알 수 없는 오류"}'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        } else {
-          print('상태 확인 실패: ${response.statusCode} ${response.body}');
-          retryCount++;
-        }
-      } catch (e) {
-        print('상태 확인 오류: $e');
-        retryCount++;
-      }
-
-      if (!isCompleted) {
-        // 10초 기다렸다가 다시 확인
-        await Future.delayed(Duration(seconds: 10));
-      }
-    }
-
-    if (!isCompleted && mounted) {
-      setState(() {
-        _isGeneratingAvatar = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('시간 초과: 네트워크 문제로 캐릭터 생성이 완료되지 않았습니다'),
-          backgroundColor: Colors.orange,
+  // 이미지 기반 캐릭터 생성 함수 추가
+  Future<void> _generateAvatarFromImage(File imageFile) async {
+    setState(() {
+      _isGeneratingAvatar = true;
+    });
+    
+    try {
+      // 멀티파트 요청 생성
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('http://localhost:5050/generate/image'),
+      );
+      
+      // 이미지 파일 추가
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'image',
+          imageFile.path,
         ),
       );
+      
+      // 스타일 파라미터 추가
+      request.fields['style'] = 'anime';
+      
+      // 요청 전송
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        
+        if (data['success'] == true && data['image_url'] != null) {
+          final String imageUrl = data['image_url'];
+          final String characterId = data['character_id'] ?? '';
+          final String message = data['message'] ?? '이미지 기반 캐릭터가 생성되었습니다!';
+          
+          if (mounted) {
+            setState(() {
+              _generatedAvatarUrl = imageUrl;
+              _isGeneratingAvatar = false;
+              
+              // 캐릭터 객체에 네트워크 이미지 URL 업데이트
+              _customizedCharacter = _customizedCharacter!.copyWith(
+                networkImageUrl: imageUrl,
+              );
+            });
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(message),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else {
+          throw Exception(data['error'] ?? '이미지 기반 캐릭터 생성에 실패했습니다');
+        }
+      } else {
+        print('API 호출 실패: ${response.statusCode} ${response.body}');
+        throw Exception('서버 응답 오류: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('이미지 기반 캐릭터 생성 오류: $e');
+      if (mounted) {
+        setState(() {
+          _isGeneratingAvatar = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('이미지 기반 캐릭터 생성 실패: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
   
@@ -754,7 +734,7 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _isGeneratingAvatar ? null : _generateCharacterAvatar,
+              onPressed: _isGeneratingAvatar ? null : () => _generateAvatar(_avatarPromptController.text.trim()),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 backgroundColor: Colors.blue,
