@@ -998,42 +998,31 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> with Tick
       return;
     }
 
-    setState(() {
-      _isGenerating = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isGenerating = true;
+      });
+    }
 
     try {
-      // TODO: 실제 AI API 호출 구현
-      // final imageUrl = await AIImageService.generateFromPrompt(_promptController.text);
-      
-      // 임시로 시뮬레이션
-      await Future.delayed(const Duration(seconds: 3));
-      final mockImageUrl = 'https://via.placeholder.com/200x200/FF69B4/FFFFFF?text=AI+Character';
-      
-      // 새 커스텀 캐릭터 추가
-      final newCharacterId = 'custom_${DateTime.now().millisecondsSinceEpoch}';
-      // TODO: widget.availableCharacters에 추가하는 로직 구현
-      
-      _promptController.clear();
-      
+      // AI 서버가 연결되지 않았으므로 기능 안내
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('캐릭터가 성공적으로 생성되었습니다!'),
-          backgroundColor: Colors.green,
+          content: Text('AI 캐릭터 생성은 하단 네비게이션의 "캐릭터" 탭을 이용해주세요.'),
+          duration: Duration(seconds: 2),
         ),
       );
       
-      // 내 캐릭터 탭으로 이동
-      _tabController.animateTo(2);
-      
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('생성 실패: $e')),
+        SnackBar(content: Text('오류: $e')),
       );
     } finally {
-      setState(() {
-        _isGenerating = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+        });
+      }
     }
   }
 
@@ -1047,39 +1036,37 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage> with Tick
       return;
     }
 
-    setState(() {
-      _isGenerating = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isGenerating = true;
+      });
+    }
 
     try {
-      // TODO: 실제 AI API 호출 구현
-      // final imageUrl = await AIImageService.generateFromImage(_uploadedImage!);
-      
-      // 임시로 시뮬레이션
-      await Future.delayed(const Duration(seconds: 3));
-      
-      setState(() {
-        _uploadedImage = null;
-      });
-      
+      // AI 서버가 연결되지 않았으므로 기능 안내
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('이미지 기반 캐릭터가 생성되었습니다!'),
-          backgroundColor: Colors.green,
+          content: Text('AI 캐릭터 생성은 하단 네비게이션의 "캐릭터" 탭을 이용해주세요.'),
+          duration: Duration(seconds: 2),
         ),
       );
       
-      // 내 캐릭터 탭으로 이동
-      _tabController.animateTo(2);
+      if (mounted) {
+        setState(() {
+          _uploadedImage = null;
+        });
+      }
       
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('생성 실패: $e')),
+        SnackBar(content: Text('오류: $e')),
       );
     } finally {
-      setState(() {
-        _isGenerating = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+        });
+      }
     }
   }
 
