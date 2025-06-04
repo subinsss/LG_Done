@@ -95,16 +95,13 @@ class _CalendarPageState extends State<CalendarPage> {
   Future<void> _addTodo(String category) async {
     if (_todoController.text.trim().isEmpty) return;
     
-    int estimatedMinutes = 30;
-    if (_minutesController.text.isNotEmpty) {
-      estimatedMinutes = int.tryParse(_minutesController.text) ?? 30;
-    }
+    // 선택된 날짜에서 시간 정보 제거 (날짜만 사용)
+    final dateOnly = DateTime(_selectedDay.year, _selectedDay.month, _selectedDay.day);
     
     final todoId = await _firestoreService.addTodo(
       title: _todoController.text.trim(),
       priority: _selectedPriority,
-      estimatedMinutes: estimatedMinutes,
-      dueDate: _selectedDay,
+      dueDate: dateOnly,
       category: category,
     );
     
@@ -587,14 +584,6 @@ class _CalendarPageState extends State<CalendarPage> {
                                           ? Colors.orange
                                           : Colors.green,
                                   shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${todo.estimatedMinutes}분',
-                                style: const TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 12,
                                 ),
                               ),
                             ],

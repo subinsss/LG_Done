@@ -496,7 +496,7 @@ class LocalMLService {
     
     // 예상 시간이 있는 작업 우선 고려
     final suitableTasks = tasks.where((task) {
-      final estimatedMinutes = task['estimatedMinutes'] ?? 30;
+      final estimatedMinutes = 30; // 고정값
       return estimatedMinutes <= availableTime;
     }).toList();
     
