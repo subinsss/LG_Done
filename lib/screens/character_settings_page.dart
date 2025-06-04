@@ -53,16 +53,19 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    print('📱 CharacterSettingsPage 초기화 시작...');
     
-    // Firebase 기본 테스트
-    _testFirebaseConnection();
-    
-    _checkServerHealth();
-    _loadSelectedCharacter();
-    _loadUserCharacters();
-    _loadUsageStats();
-    print('📱 CharacterSettingsPage 초기화 완료!');
+    // 최적화된 초기화 (로그 제거)
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    // 병렬 로딩으로 성능 개선
+    await Future.wait([
+      _checkServerHealth(),
+      _loadUserCharacters(),
+      _loadUsageStats(),
+      _loadSelectedCharacter(),
+    ]);
   }
 
   @override
@@ -72,92 +75,41 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     super.dispose();
   }
 
-  Future<void> _testFirebaseConnection() async {
-    try {
-      print('🔥 Firebase 기본 연결 테스트...');
-      final testDoc = await FirebaseFirestore.instance
-          .collection('test')
-          .limit(1)
-          .get();
-      print('✅ Firebase 기본 연결 성공!');
-    } catch (e) {
-      print('❌ Firebase 기본 연결 실패: $e');
-    }
-  }
-
   Future<void> _checkServerHealth() async {
     final isHealthy = await AICharacterService.checkServerHealth();
-    setState(() {
-      _isServerHealthy = isHealthy;
-    });
+    if (mounted) {
+      setState(() {
+        _isServerHealthy = isHealthy;
+      });
+    }
   }
 
   Future<void> _loadUserCharacters() async {
     try {
-      print('🔄 캐릭터 로딩 시작...');
+      final characters = await AICharacterService.getUserCharacters();
       
-      // 🧪 UI 테스트용 하드코딩된 데이터
-      print('🧪 테스트 데이터 생성 중...');
-      final testCharacters = [
-        AICharacter(
-          characterId: 'test1',
-          userId: 'test',
-          name: '테스트 고양이',
-          prompt: '귀여운 흰색 고양이',
-          generationType: 'prompt',
-          imageUrl: 'https://via.placeholder.com/200x200/FF69B4/FFFFFF?text=Test+Cat',
-          createdAt: DateTime.now(),
-          type: 'custom',
-        ),
-        AICharacter(
-          characterId: 'test2',
-          userId: 'test',
-          name: '테스트 강아지',
-          prompt: '파란 눈의 강아지',
-          generationType: 'prompt',
-          imageUrl: 'https://via.placeholder.com/200x200/00BFFF/FFFFFF?text=Test+Dog',
-          createdAt: DateTime.now(),
-          type: 'custom',
-        ),
-      ];
-      
-      print('📊 테스트 캐릭터 ${testCharacters.length}개 생성');
-      
-      setState(() {
-        _userCharacters = testCharacters;
-      });
-      
-      print('✅ UI 업데이트 완료!');
-      
-      // 실제 Firebase 데이터도 시도
-      try {
-        final characters = await AICharacterService.getUserCharacters();
-        print('📊 Firebase 로딩된 캐릭터 개수: ${characters.length}');
-        
-        if (characters.isNotEmpty) {
-          print('🔄 Firebase 데이터로 교체...');
-          setState(() {
-            _userCharacters = characters;
-          });
-        }
-      } catch (e) {
-        print('❌ Firebase 로딩 실패, 테스트 데이터 유지: $e');
+      if (mounted) {
+        setState(() {
+          _userCharacters = characters;
+        });
       }
-      
     } catch (e) {
-      print('❌ 캐릭터 로딩 실패: $e');
-      _showErrorDialog('캐릭터 로딩 실패: $e');
+      if (mounted) {
+        _showErrorDialog('캐릭터 로딩 실패: $e');
+      }
     }
   }
 
   Future<void> _loadUsageStats() async {
     try {
       final stats = await AICharacterService.getUsageStats();
-      setState(() {
-        _usageStats = stats;
-      });
+      if (mounted) {
+        setState(() {
+          _usageStats = stats;
+        });
+      }
     } catch (e) {
-      print('사용량 통계 로딩 실패: $e');
+      // 로그 제거 - 통계는 선택사항
     }
   }
 
@@ -168,15 +120,14 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
       
       if (characterJson != null) {
         final characterData = jsonDecode(characterJson);
-        setState(() {
-          _selectedAICharacter = characterData;
-        });
-        print('✅ 선택된 캐릭터 로딩: ${characterData['name']}');
-      } else {
-        print('📝 선택된 캐릭터 없음');
+        if (mounted) {
+          setState(() {
+            _selectedAICharacter = characterData;
+          });
+        }
       }
     } catch (e) {
-      print('❌ 선택된 캐릭터 로딩 실패: $e');
+      // 로그 제거 - 선택된 캐릭터는 선택사항
     }
   }
 
@@ -191,9 +142,11 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
       return;
     }
 
-    setState(() {
-      _isGenerating = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isGenerating = true;
+      });
+    }
 
     try {
       // 캐릭터 타입을 포함한 프롬프트 생성
@@ -221,9 +174,11 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     } catch (e) {
       _showErrorDialog('캐릭터 생성 중 오류가 발생했습니다: $e');
     } finally {
-      setState(() {
-        _isGenerating = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+        });
+      }
     }
   }
 
@@ -243,9 +198,11 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
 
       if (image == null) return;
 
-      setState(() {
-        _isGenerating = true;
-      });
+      if (mounted) {
+        setState(() {
+          _isGenerating = true;
+        });
+      }
 
       // TODO: 이미지 기반 생성은 나중에 구현
       _showErrorDialog('이미지 기반 생성은 아직 구현되지 않았습니다');
@@ -253,9 +210,11 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     } catch (e) {
       _showErrorDialog('이미지 처리 중 오류가 발생했습니다: $e');
     } finally {
-      setState(() {
-        _isGenerating = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+        });
+      }
     }
   }
 
@@ -408,7 +367,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
   }
 
   Widget _buildAIGenerationTab() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -457,7 +416,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
                         value: _selectedCharacterType,
                         isExpanded: true,
                         onChanged: (String? newValue) {
-                          if (newValue != null) {
+                          if (newValue != null && mounted) {
                             setState(() {
                               _selectedCharacterType = newValue;
                             });
@@ -489,7 +448,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
                         value: _selectedStyle,
                         isExpanded: true,
                         onChanged: (String? newValue) {
-                          if (newValue != null) {
+                          if (newValue != null && mounted) {
                             setState(() {
                               _selectedStyle = newValue;
                             });
@@ -584,26 +543,9 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
               ),
               IconButton(
                 onPressed: () async {
-                  print('🔄 새로고침 버튼 클릭됨!');
-                  
-                  // 직접적인 Firebase 테스트
-                  try {
-                    print('🔥 직접 Firebase 테스트 시작...');
-                    final snapshot = await FirebaseFirestore.instance
-                        .collection('characters')
-                        .get();
-                    print('📊 characters 컬렉션 전체 문서 수: ${snapshot.docs.length}');
-                    
-                    if (snapshot.docs.isNotEmpty) {
-                      final firstDoc = snapshot.docs.first;
-                      print('📄 첫 번째 문서 ID: ${firstDoc.id}');
-                      print('📄 첫 번째 문서 데이터: ${firstDoc.data()}');
-                    }
-                  } catch (e) {
-                    print('❌ 직접 Firebase 테스트 실패: $e');
-                  }
-                  
-                  _loadUserCharacters();
+                  // 캐시 새로고침으로 최적화
+                  AICharacterService.refreshCache();
+                  await _loadUserCharacters();
                 },
                 icon: const Icon(Icons.refresh),
               ),
@@ -835,9 +777,6 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
 
   Future<void> _applyCharacter(AICharacter character) async {
     try {
-      print('🎯 캐릭터 선택: ${character.name}');
-      print('📝 character_id: ${character.characterId}');
-      
       // 🔥 Firestore에서 직접 is_selected 업데이트
       final firestore = FirebaseFirestore.instance;
       final batch = firestore.batch();
@@ -855,8 +794,6 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
       // 3. 배치 커밋
       await batch.commit();
       
-      print('✅ Firestore에서 캐릭터 선택 완료: ${character.name}');
-      
       // SharedPreferences에도 저장 (백업용)
       final prefs = await SharedPreferences.getInstance();
       final characterData = {
@@ -869,7 +806,6 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
       };
       
       await prefs.setString('selected_character', jsonEncode(characterData));
-      print('✅ 로컬 저장도 완료');
       
       // 선택된 캐릭터 정보 업데이트
       setState(() {
@@ -891,8 +827,6 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
       Navigator.pop(context, true);
       
     } catch (e) {
-      print('❌ 캐릭터 적용 오류: $e');
-      print('❌ 오류 타입: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
