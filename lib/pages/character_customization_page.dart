@@ -323,9 +323,9 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
     try {
       String enhancedPrompt = "character, 2-head-tall chibi with big head small body, ${prompt}, cute maplestory game style, digital art, full body, white background, high quality, vibrant colors, clean lineart";
       
-      // 사용자 서버 API 호출 (localhost:5050)
+      // 사용자 서버 API 호출 (컴퓨터 IP 주소 사용)
       final response = await http.post(
-        Uri.parse('http://localhost:5050/generate/prompt'),
+        Uri.parse('http://172.20.10.11:5050/generate/prompt'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -394,7 +394,7 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
       // 멀티파트 요청 생성
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://localhost:5050/generate/image'),
+        Uri.parse('http://172.20.10.11:5050/generate/image'),
       );
       
       // 이미지 파일 추가

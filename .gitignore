@@ -59,3 +59,22 @@ cursor-talk-to-figma-mcp/
 *.msi
 node-installer.msi
 nodejs-installer.msi
+
+# Flask Server related
+flask_server/__pycache__/
+flask_server/*.pyc
+flask_server/.env
+flask_server/lg-dx-school-*.json
+*.env
+
+# Python related
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/

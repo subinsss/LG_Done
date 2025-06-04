@@ -9,17 +9,25 @@ import base64
 import time
 from datetime import datetime
 import os
+from dotenv import load_dotenv
+
+# .env 파일에서 환경변수 로드
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
 db = init_firebase("lg-dx-school-5eaae-firebase-adminsdk-fbsvc-41ea7b7d71.json")
-HF_API_KEY = "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"
+# HF_API_KEY = "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"  # 주석처리됨
+HF_API_KEY = os.getenv('HF_API_KEY', 'your_api_key_here')  # 환경변수에서 가져오기
 HF_API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
 
 
 def query_huggingface(payload):
     """허깅페이스 API 호출"""
+    if HF_API_KEY == 'your_api_key_here':
+        raise Exception("허깅페이스 API 키가 설정되지 않았습니다. 환경변수 HF_API_KEY를 설정해주세요.")
+    
     headers = {"Authorization": f"Bearer {HF_API_KEY}"}
 
     for attempt in range(3):
