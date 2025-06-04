@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import '../services/firestore_todo_service.dart';
 import '../widgets/local_ml_widget.dart';
+import '../screens/character_settings_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:http/http.dart' as http;
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SimpleHomePage extends StatefulWidget {
   const SimpleHomePage({super.key});
@@ -36,6 +44,60 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   DateTime _selectedDate = DateTime.now();
   String _selectedCategory = '';
 
+  // 캐릭터 커스터마이징을 위한 상태 추가
+  String _selectedCharacter = 'emoji_default'; // 기본 이모지 캐릭터
+  bool _isPremiumUser = false; // 사용자 등급 (테스트용으로 false 설정)
+  
+  // AI 생성 캐릭터 정보
+  Map<String, dynamic>? _selectedAICharacter;
+  
+  // 사용 가능한 캐릭터 목록 (나중에 실제 이미지로 교체될 예정)
+  final Map<String, Map<String, dynamic>> _availableCharacters = {
+    'emoji_default': {
+      'name': '기본 이모지',
+      'type': 'emoji',
+      'happy': '🎉',
+      'working': '💪',
+      'starting': '🌱',
+      'normal': '😊',
+    },
+    'emoji_cat': {
+      'name': '고양이',
+      'type': 'emoji', 
+      'happy': '😸',
+      'working': '🙀',
+      'starting': '😺',
+      'normal': '😸',
+    },
+    'emoji_robot': {
+      'name': '로봇',
+      'type': 'emoji',
+      'happy': '🤖',
+      'working': '🤖',
+      'starting': '🤖', 
+      'normal': '🤖',
+    },
+    'image_girl': {
+      'name': '소녀 캐릭터',
+      'type': 'image',
+      'path': 'assets/characters/girl.png', // 나중에 추가될 이미지
+    },
+    'image_boy': {
+      'name': '소년 캐릭터', 
+      'type': 'image',
+      'path': 'assets/characters/boy.png', // 나중에 추가될 이미지
+    },
+    'image_wizard': {
+      'name': '마법사',
+      'type': 'image', 
+      'path': 'assets/characters/wizard.png', // 나중에 추가될 이미지
+    },
+  };
+
+  bool _isDataLoading = false;
+
+  StreamSubscription<QuerySnapshot>? _selectedCharacterSubscription;
+
   @override
   void initState() {
     super.initState();
@@ -48,16 +110,57 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     _categoryController.dispose();
     _todosSubscription?.cancel();
     _categoriesSubscription?.cancel();
+    _selectedCharacterSubscription?.cancel();
     super.dispose();
   }
 
-  // 데이터 초기화
-  void _initializeData() async {
-    // 할일 목록 구독
-    _listenToTodos();
-    
-    // 카테고리 목록 구독
-    _listenToCategories();
+  Future<void> _initializeData() async {
+    setState(() {
+      _isDataLoading = true;
+    });
+
+    try {
+      _listenToTodos();
+      _listenToCategories();
+      _listenToSelectedCharacter();
+    } catch (e) {
+      print('❌ 데이터 초기화 오류: $e');
+    } finally {
+      setState(() {
+        _isDataLoading = false;
+      });
+    }
+  }
+
+  // 🔥 Firestore에서 선택된 캐릭터 실시간 감지
+  void _listenToSelectedCharacter() {
+    _selectedCharacterSubscription = FirebaseFirestore.instance
+        .collection('characters')
+        .where('is_selected', isEqualTo: true)
+        .limit(1)
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.docs.isNotEmpty) {
+        final characterData = snapshot.docs.first.data();
+        setState(() {
+          _selectedAICharacter = {
+            'character_id': snapshot.docs.first.id,
+            'name': characterData['name'] ?? '이름 없음',
+            'image_url': characterData['image_url'] ?? '',
+            'prompt': characterData['prompt'] ?? '',
+            'is_selected': characterData['is_selected'] ?? false,
+          };
+        });
+        print('✅ 선택된 캐릭터 실시간 업데이트: ${characterData['name']}');
+      } else {
+        setState(() {
+          _selectedAICharacter = null;
+        });
+        print('📝 선택된 캐릭터 없음 - 기본 이모지 사용');
+      }
+    }, onError: (error) {
+      print('❌ 선택된 캐릭터 스트림 오류: $error');
+    });
   }
 
   // 카테고리 목록 실시간 구독
@@ -203,70 +306,203 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     int completedCount = selectedDateTodos.where((todo) => todo.isCompleted).length;
     double completionRate = selectedDateTodos.isEmpty ? 0 : completedCount / selectedDateTodos.length;
     
-    String characterEmoji;
-    String statusText;
+    // 🔥 선택된 AI 캐릭터가 있으면 그것을 표시
+    if (_selectedAICharacter != null && _selectedAICharacter!['image_url'] != null) {
+      String imageUrl = _selectedAICharacter!['image_url'];
+      
+      try {
+        // Base64 이미지인지 확인
+        if (imageUrl.startsWith('data:image/')) {
+          // Base64 이미지 처리
+          return Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(60),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.purple.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(60),
+              child: Image.memory(
+                base64Decode(imageUrl.split(',')[1]),
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  print('Base64 이미지 로딩 오류: $error');
+                  return _buildDefaultCharacter();
+                },
+              ),
+            ),
+          );
+        } else {
+          // 일반 네트워크 이미지
+          return Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(60),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.purple.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(60),
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return const Center(child: CircularProgressIndicator());
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  print('AI 캐릭터 네트워크 이미지 로딩 오류: $error');
+                  return _buildDefaultCharacter();
+                },
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        print('AI 캐릭터 이미지 처리 오류: $e');
+        return _buildDefaultCharacter();
+      }
+    } 
+    
+    // 기본 이모지 캐릭터 표시
+    return _buildDefaultCharacter();
+  }
+  
+  Widget _buildCharacterWidget() {
+    // AI 캐릭터가 선택되어 있는 경우
+    if (_selectedAICharacter != null) {
+      final imageUrl = _selectedAICharacter!['image_url'];
+      
+      try {
+        // Base64 이미지인지 확인
+        if (imageUrl.startsWith('data:image/')) {
+          final base64String = imageUrl.split(',')[1];
+          final Uint8List bytes = base64Decode(base64String);
+          
+          return Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(60),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.purple.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(60),
+              child: Image.memory(
+                bytes,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  print('AI 캐릭터 이미지 로딩 오류: $error');
+                  return _buildDefaultCharacter();
+                },
+              ),
+            ),
+          );
+        } else {
+          // 일반 네트워크 이미지
+          return Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(60),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.purple.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(60),
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return const Center(child: CircularProgressIndicator());
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  print('AI 캐릭터 네트워크 이미지 로딩 오류: $error');
+                  return _buildDefaultCharacter();
+                },
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        print('AI 캐릭터 이미지 처리 오류: $e');
+        return _buildDefaultCharacter();
+      }
+    } 
+    
+    // 기본 이모지 캐릭터 표시
+    return _buildDefaultCharacter();
+  }
+  
+  Widget _buildDefaultCharacter() {
+    // 선택한 날짜의 할일만 필터링해서 감정 결정
+    final selectedDateTodos = _todos.where((todo) {
+      if (todo.dueDate == null) return false;
+      return isSameDay(todo.dueDate!, _selectedDay);
+    }).toList();
+
+    int completedCount = selectedDateTodos.where((todo) => todo.isCompleted).length;
+    double completionRate = selectedDateTodos.isEmpty ? 0 : completedCount / selectedDateTodos.length;
+    
+    final characterData = _availableCharacters[_selectedCharacter]!;
+    String characterDisplay;
     
     if (completionRate >= 0.8) {
-      characterEmoji = '🎉';
-      statusText = '완벽해요!';
+      characterDisplay = characterData['type'] == 'emoji' ? characterData['happy'] : characterData['path'];
     } else if (completionRate >= 0.5) {
-      characterEmoji = '💪';
-      statusText = '열심히 하고 있어요!';
+      characterDisplay = characterData['type'] == 'emoji' ? characterData['working'] : characterData['path'];
     } else if (completionRate > 0) {
-      characterEmoji = '🌱';
-      statusText = '시작이 좋아요!';
+      characterDisplay = characterData['type'] == 'emoji' ? characterData['starting'] : characterData['path'];
     } else {
-      characterEmoji = '😊';
-      statusText = selectedDateTodos.isEmpty ? '새로운 하루!' : '화이팅!';
+      characterDisplay = characterData['type'] == 'emoji' ? characterData['normal'] : characterData['path'];
     }
-
-    return Center(
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
+    
+    if (characterData['type'] == 'emoji') {
+      return Text(
+        characterDisplay,
+        style: const TextStyle(fontSize: 80),
+        textAlign: TextAlign.center,
+      );
+    } else {
+      return Container(
+        width: 120,
+        height: 120,
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.pink.withOpacity(0.1),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(60),
+          color: Colors.grey.shade200,
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              characterEmoji,
-              style: const TextStyle(fontSize: 80),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              statusText,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.pink.shade600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              selectedDateTodos.isEmpty ? '할일을 추가해보세요!' : '완료율: ${(completionRate * 100).toInt()}%',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+        child: Icon(
+          Icons.person,
+          size: 60,
+          color: Colors.grey.shade400,
         ),
-      ),
-    );
+      );
+    }
   }
 
   Widget _buildQuickStats() {
@@ -304,7 +540,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Colors.pink.shade600,
+                  color: Colors.black,
                 ),
               ),
               IconButton(
@@ -315,7 +551,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 },
                 icon: Icon(
                   _isCalendarExpanded ? Icons.expand_less : Icons.expand_more,
-                  color: Colors.pink.shade400,
+                  color: Colors.grey.shade600,
                 ),
                 tooltip: _isCalendarExpanded ? '달력 접기' : '달력 펼치기',
               ),
@@ -350,15 +586,15 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
               calendarStyle: CalendarStyle(
                 outsideDaysVisible: false,
                 selectedDecoration: BoxDecoration(
-                  color: Colors.pink.shade400,
+                  color: Colors.black,
                   shape: BoxShape.circle,
                 ),
                 todayDecoration: BoxDecoration(
-                  color: Colors.pink.withOpacity(0.3),
+                  color: Colors.grey.withOpacity(0.3),
                   shape: BoxShape.circle,
                 ),
                 markerDecoration: BoxDecoration(
-                  color: Colors.blue.shade400,
+                  color: Colors.grey.shade600,
                   shape: BoxShape.circle,
                 ),
                 markersMaxCount: 3,
@@ -367,12 +603,12 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 formatButtonVisible: false,
                 titleCentered: true,
                 titleTextStyle: TextStyle(
-                  color: Colors.pink.shade600,
+                  color: Colors.black,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
-                leftChevronIcon: Icon(Icons.chevron_left, color: Colors.pink.shade400),
-                rightChevronIcon: Icon(Icons.chevron_right, color: Colors.pink.shade400),
+                leftChevronIcon: Icon(Icons.chevron_left, color: Colors.grey.shade600),
+                rightChevronIcon: Icon(Icons.chevron_right, color: Colors.grey.shade600),
               ),
               onDaySelected: (selectedDay, focusedDay) {
                 setState(() {
@@ -476,7 +712,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
               icon: const Icon(Icons.add, size: 20),
               label: const Text('첫 번째 카테고리 추가하기'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.pink.shade400,
+                backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(
@@ -792,7 +1028,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
             ElevatedButton(
               onPressed: _addTodo,
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.pink.shade400,
+                backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
               ),
               child: const Text('추가'),
@@ -837,7 +1073,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.pink.shade50,
+      backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
         title: const Text(
           '할일 관리',
@@ -846,9 +1082,32 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
             color: Colors.white,
           ),
         ),
-        backgroundColor: Colors.pink.shade400,
+        backgroundColor: Colors.black,
         elevation: 0,
         centerTitle: true,
+        actions: [
+          // 프리미엄 테스트 버튼
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _isPremiumUser = !_isPremiumUser;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    _isPremiumUser ? 'Premium 모드로 변경되었습니다' : 'Free 모드로 변경되었습니다',
+                  ),
+                  backgroundColor: _isPremiumUser ? Colors.amber.shade600 : Colors.grey.shade600,
+                ),
+              );
+            },
+            icon: Icon(
+              _isPremiumUser ? Icons.star : Icons.star_border,
+              color: _isPremiumUser ? Colors.yellow.shade200 : Colors.white,
+            ),
+            tooltip: _isPremiumUser ? 'Premium 모드' : 'Free 모드 (탭하여 변경)',
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -859,7 +1118,44 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
             Container(
               width: double.infinity,
               alignment: Alignment.center,
-              child: _buildCharacterImage(),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // 캐릭터 이미지 (터치 가능)
+                  GestureDetector(
+                    onTap: _showCharacterSettings,
+                    child: _buildCharacterImage(),
+                  ),
+                  
+                  // 설정 버튼 (우상단)
+                  Positioned(
+                    top: 0,
+                    right: 20,
+                    child: GestureDetector(
+                      onTap: _showCharacterSettings,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.settings,
+                          size: 20,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 20),
             
@@ -876,7 +1172,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: Colors.pink.shade600,
+                    color: Colors.black,
                   ),
                 ),
                 Row(
@@ -897,7 +1193,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                       icon: const Icon(Icons.category, size: 18),
                       label: const Text('카테고리 관리'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.pink.shade400,
+                        backgroundColor: Colors.black,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         shape: RoundedRectangleBorder(
@@ -944,7 +1240,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         builder: (context, setDialogState) => AlertDialog(
           title: Row(
             children: [
-              Icon(Icons.category, color: Colors.pink.shade400),
+              Icon(Icons.category, color: Colors.black),
               const SizedBox(width: 8),
               const Text('카테고리 관리'),
             ],
@@ -958,7 +1254,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.pink.shade50,
+                    color: Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
@@ -968,7 +1264,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                         '새 카테고리 추가',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.pink.shade600,
+                          color: Colors.black,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -989,7 +1285,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                           ElevatedButton(
                             onPressed: () => _addCategoryFromDialog(setDialogState),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.pink.shade400,
+                              backgroundColor: Colors.black,
                               foregroundColor: Colors.white,
                             ),
                             child: const Text('추가'),
@@ -1300,7 +1596,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 Navigator.of(context).pop();
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade400,
+                backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
               ),
               child: const Text('저장'),
@@ -1309,5 +1605,21 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         ),
       ),
     );
+  }
+
+  // 캐릭터 설정 페이지로 이동
+  void _showCharacterSettings() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CharacterSettingsPage(),
+      ),
+    );
+    
+    // 캐릭터가 선택되어 돌아온 경우 새로고침
+    if (result == true) {
+      print('🔄 캐릭터 변경됨! 실시간 업데이트될 예정...');
+      // 실시간 스트림이 자동으로 업데이트하므로 별도 로딩 불필요
+    }
   }
 } 
