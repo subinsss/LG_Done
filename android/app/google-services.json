@@ -4,6 +4,26 @@
     "project_id": "lg-dx-school-5eaae",
     "storage_bucket": "lg-dx-school-5eaae.firebasestorage.app"
   },
-  "client": [],
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:640777476330:android:548918878269ef31355f93",
+        "android_client_info": {
+          "package_name": "com.lgdxschool.ThinQ"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBTTyVaGCJTLhvG4hyr7uBnAhTJgeWIk5M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
   "configuration_version": "1"
 }
