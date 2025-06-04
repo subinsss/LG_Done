@@ -119,9 +119,10 @@ class StatisticsService {
       for (QueryDocumentSnapshot doc in completedTodos) {
         Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
         
-        String category = data['category'] ?? '기타';
-        int estimatedMinutes = data['estimatedMinutes'] ?? 0;
-        String title = data['title'] ?? '제목없음';
+        String title = data['title'] ?? '';
+        String category = data['category'] ?? '';
+        bool isCompleted = data['isCompleted'] ?? false;
+        int estimatedMinutes = 30; // 모든 할일 30분으로 고정
         
         print('✅ 완료된 할일: "$title" (${category}, ${estimatedMinutes}분)');
         
@@ -135,7 +136,7 @@ class StatisticsService {
         Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
         String title = data['title'] ?? '제목없음';
         String category = data['category'] ?? '기타';
-        int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+        int estimatedMinutes = 30; // 모든 할일 30분으로 고정
         
         print('⏳ 미완료 할일: "$title" (${category}, ${estimatedMinutes}분) - 통계에서 제외');
       }
@@ -166,7 +167,7 @@ class StatisticsService {
       Map<int, int> hourlyActivity = {};
       for (QueryDocumentSnapshot doc in completedTodos) {
         Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+        int estimatedMinutes = 30; // 모든 할일 30분으로 고정
         
         // completedAt 시간을 사용
         Timestamp? completedAt = data['completedAt'] as Timestamp?;
@@ -276,7 +277,7 @@ class StatisticsService {
           
           if (isCompleted) {
             String category = data['category'] ?? '기타';
-            int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+            int estimatedMinutes = 30; // 모든 할일 30분으로 고정
             String title = data['title'] ?? '제목없음';
             
             completedTasks++;
@@ -296,7 +297,7 @@ class StatisticsService {
         
         for (QueryDocumentSnapshot doc in completedDayTodos) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+          int estimatedMinutes = 30; // 모든 할일 30분으로 고정
           
           Timestamp? completedAt = data['completedAt'] as Timestamp?;
           if (completedAt != null) {
@@ -387,7 +388,7 @@ class StatisticsService {
           
           if (isCompleted) {
             String category = data['category'] ?? '기타';
-            int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+            int estimatedMinutes = 30; // 모든 할일 30분으로 고정
             
             completedTasks++;
             totalStudyTime += estimatedMinutes;
@@ -404,7 +405,7 @@ class StatisticsService {
         
         for (QueryDocumentSnapshot doc in completedDayTodos) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+          int estimatedMinutes = 30; // 모든 할일 30분으로 고정
           
           Timestamp? completedAt = data['completedAt'] as Timestamp?;
           if (completedAt != null) {
@@ -497,7 +498,7 @@ class StatisticsService {
           
           if (isCompleted) {
             String category = data['category'] ?? '기타';
-            int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+            int estimatedMinutes = 30; // 모든 할일 30분으로 고정
             
             completedTasks++;
             totalStudyTime += estimatedMinutes;
@@ -717,7 +718,7 @@ class StatisticsService {
         for (QueryDocumentSnapshot doc in completedTodos) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
           String category = data['category'] ?? '기타';
-          int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+          int estimatedMinutes = 30; // 모든 할일 30분으로 고정
           
           completedTasks++;
           totalStudyTime += estimatedMinutes;
@@ -815,7 +816,7 @@ class StatisticsService {
         for (QueryDocumentSnapshot doc in completedTodos) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
           String category = data['category'] ?? '기타';
-          int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+          int estimatedMinutes = 30; // 모든 할일 30분으로 고정
           
           completedTasks++;
           totalStudyTime += estimatedMinutes;
@@ -904,7 +905,7 @@ class StatisticsService {
           
           if (isCompleted) {
             String category = data['category'] ?? '기타';
-            int estimatedMinutes = data['estimatedMinutes'] ?? 0;
+            int estimatedMinutes = 30; // 모든 할일 30분으로 고정
             
             completedTasks++;
             totalStudyTime += estimatedMinutes;

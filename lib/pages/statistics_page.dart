@@ -1050,7 +1050,6 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             )
           : TabBarView(
               controller: _tabController,
-              physics: const NeverScrollableScrollPhysics(),
               children: [
                 _buildDailyView(),
                 _buildWeeklyView(),
@@ -1068,7 +1067,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          _buildDateSelector(),
+          _buildDateSelector('일간'),
           const SizedBox(height: 16),
           _buildAchievementBadges(_dailyAchievements, '일간'),
           _buildDailySummaryCard(),
@@ -1092,7 +1091,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildDateSelector(),
+          _buildDateSelector('주간'),
           const SizedBox(height: 16),
           _buildAchievementBadges(_weeklyAchievements, '주간'),
           _buildWeeklySummaryCard(),
@@ -1116,7 +1115,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildDateSelector(),
+          _buildDateSelector('월간'),
           const SizedBox(height: 16),
           _buildAchievementBadges(_monthlyAchievements, '월간'),
           _buildMonthlySummaryCard(),
@@ -1140,7 +1139,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildDateSelector(),
+          _buildDateSelector('연간'),
           const SizedBox(height: 16),
           _buildAchievementBadges(_yearlyAchievements, '연간'),
           _buildYearlySummaryCard(),
@@ -1157,21 +1156,16 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   }
 
   // 날짜 선택기 - 더 직관적인 UI로 개선
-  Widget _buildDateSelector() {
-    final now = DateTime.now();
-    final startOfWeek = _selectedWeek.subtract(Duration(days: _selectedWeek.weekday - 1));
-    final endOfWeek = startOfWeek.add(const Duration(days: 6));
-    
+  Widget _buildDateSelector(String period) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 3,
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
@@ -1179,32 +1173,89 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          // 이전 버튼
           IconButton(
+            onPressed: () => _changePeriod(period, -1),
             icon: const Icon(Icons.chevron_left),
-            onPressed: () {
-              setState(() {
-                _selectedWeek = _selectedWeek.subtract(const Duration(days: 7));
-                _loadStatistics();
-              });
-            },
+            color: Colors.purple.shade600,
+            tooltip: _getPreviousTooltip(period),
           ),
-          Text(
-            '${DateFormat('MM/dd').format(startOfWeek)} - ${DateFormat('MM/dd').format(endOfWeek)}',
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
+          // 날짜 텍스트 + 오늘로 가기 버튼
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                GestureDetector(
+                  onTap: () => _showDatePicker(period),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.purple.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          size: 16,
+                          color: Colors.purple.shade600,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _getDateRangeText(period),
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.purple.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (!_isToday(period)) ...[
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => _goToToday(period),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.today,
+                            size: 14,
+                            color: Colors.purple.shade600,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '오늘',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.purple.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
+          // 다음 버튼 (미래는 오늘까지만)
           IconButton(
+            onPressed: _canGoNext(period) ? () => _changePeriod(period, 1) : null,
             icon: const Icon(Icons.chevron_right),
-            onPressed: () {
-              if (_selectedWeek.isBefore(now)) {
-                setState(() {
-                  _selectedWeek = _selectedWeek.add(const Duration(days: 7));
-                  _loadStatistics();
-                });
-              }
-            },
+            color: _canGoNext(period) ? Colors.purple.shade600 : Colors.grey.shade300,
+            tooltip: _canGoNext(period) ? _getNextTooltip(period) : '미래 날짜는 선택할 수 없습니다',
           ),
         ],
       ),
@@ -1693,92 +1744,83 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       }
     }
     
-    return GestureDetector(
-      onPanUpdate: (details) {
-        if (details.delta.dx > 10) {
-          _changePeriod('주간', -1);
-        } else if (details.delta.dx < -10) {
-          _changePeriod('주간', 1);
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '주간 활동',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '주간 활동',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 200,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(7, (index) {
+                if (index >= _weeklyData.length) return const SizedBox();
+                
+                DailyStats dayData = _weeklyData[index];
+                Map<String, int> categoryTime = _processCategories(dayData.categoryTime);
+                int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
+                
+                double maxHeight = 160;
+                // 최대값 기준으로 높이 계산
+                double barHeight = maxTotalTime > 0 ? (totalTime / maxTotalTime) * maxHeight : 0;
+                
+                // 실제 날짜에 맞는 요일 계산
+                String dayOfWeek = _getDayOfWeekKorean(dayData.date.weekday);
+                
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    AnimatedBuilder(
+                      animation: _progressAnimation,
+                      builder: (context, child) {
+                        return Container(
+                          width: 24,
+                          child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      dayOfWeek,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: dayData.date.weekday == 7 ? FontWeight.bold : FontWeight.normal, // 일요일 강조
+                      ),
+                    ),
+                    Text(
+                      '$totalTime분',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                );
+              }),
             ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 200,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: List.generate(7, (index) {
-                  if (index >= _weeklyData.length) return const SizedBox();
-                  
-                  DailyStats dayData = _weeklyData[index];
-                  Map<String, int> categoryTime = _processCategories(dayData.categoryTime);
-                  int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
-                  
-                  double maxHeight = 160;
-                  // 최대값 기준으로 높이 계산
-                  double barHeight = maxTotalTime > 0 ? (totalTime / maxTotalTime) * maxHeight : 0;
-                  
-                  // 실제 날짜에 맞는 요일 계산
-                  String dayOfWeek = _getDayOfWeekKorean(dayData.date.weekday);
-                  
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      AnimatedBuilder(
-                        animation: _progressAnimation,
-                        builder: (context, child) {
-                          return Container(
-                            width: 24,
-                            child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        dayOfWeek,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                          fontWeight: dayData.date.weekday == 7 ? FontWeight.bold : FontWeight.normal, // 일요일 강조
-                        ),
-                      ),
-                      Text(
-                        '$totalTime분',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                    ],
-                  );
-                }),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

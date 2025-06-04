@@ -5,11 +5,7 @@ class TodoItem {
   final String title;
   final bool isCompleted;
   final String priority;
-  final int estimatedMinutes;
-  final DateTime? dueDate;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
-  final DateTime? completedAt;
+  final DateTime? dueDate; // 시간 제외, 날짜만
   final String userId;
   final String category;
 
@@ -18,11 +14,7 @@ class TodoItem {
     required this.title,
     required this.isCompleted,
     required this.priority,
-    this.estimatedMinutes = 30,
     this.dueDate,
-    this.createdAt,
-    this.updatedAt,
-    this.completedAt,
     required this.userId,
     required this.category,
   });
@@ -34,11 +26,7 @@ class TodoItem {
       title: data['title'] ?? '',
       isCompleted: data['isCompleted'] ?? false,
       priority: data['priority'] ?? 'medium',
-      estimatedMinutes: data['estimatedMinutes'] ?? 30,
       dueDate: data['dueDate']?.toDate(),
-      createdAt: data['createdAt']?.toDate(),
-      updatedAt: data['updatedAt']?.toDate(),
-      completedAt: data['completedAt']?.toDate(),
       userId: data['userId'] ?? 'anonymous',
       category: data['category'] ?? '',
     );
@@ -50,8 +38,6 @@ class TodoItem {
       'isCompleted': isCompleted,
       'priority': priority,
       'dueDate': dueDate != null ? Timestamp.fromDate(dueDate!) : null,
-      'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
-      'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
       'userId': userId,
       'category': category,
     };
@@ -83,28 +69,27 @@ class FirestoreTodoService {
   Future<String?> addTodo({
     required String title,
     String priority = 'medium',
-    int estimatedMinutes = 30,
     DateTime? dueDate,
     required String category,
   }) async {
     try {
-      final now = DateTime.now();
-      final defaultDueDate = dueDate ?? DateTime(now.year, now.month, now.day);
+      // 날짜만 저장 (시간 정보 완전 제거)
+      DateTime? dateToPersist;
+      if (dueDate != null) {
+        dateToPersist = DateTime(dueDate.year, dueDate.month, dueDate.day);
+      }
       
       final docRef = await _firestore!.collection(_collection).add({
         'title': title,
         'isCompleted': false,
         'priority': priority,
-        'estimatedMinutes': estimatedMinutes,
-        'dueDate': Timestamp.fromDate(defaultDueDate),
-        'createdAt': Timestamp.fromDate(now),
-        'updatedAt': Timestamp.fromDate(now),
-        'completedAt': null,
+        'dueDate': dateToPersist != null ? Timestamp.fromDate(dateToPersist) : null,
         'userId': _userId,
         'category': category,
       });
       
       print('✅ Firestore에 할일 추가 성공: $title (ID: ${docRef.id})');
+      print('📅 저장된 날짜: ${dateToPersist?.toString() ?? 'null'}');
       return docRef.id;
     } catch (e) {
       print('❌ 할일 추가 실패: $e');
@@ -157,12 +142,8 @@ class FirestoreTodoService {
   // 할일 완료 상태 토글 - Firestore에 직접 업데이트
   Future<bool> toggleTodoCompletion(String todoId, bool isCompleted) async {
     try {
-      final now = DateTime.now();
-      
       await _firestore!.collection(_collection).doc(todoId).update({
         'isCompleted': isCompleted,
-        'updatedAt': Timestamp.fromDate(now),
-        'completedAt': isCompleted ? Timestamp.fromDate(now) : null,
       });
       
       print('✅ Firestore에서 할일 상태 변경 성공: $todoId -> $isCompleted');
@@ -191,7 +172,6 @@ class FirestoreTodoService {
       final snapshot = await _firestore!.collection(_collection)
           .where('userId', isEqualTo: _userId)
           .where('isCompleted', isEqualTo: true)
-          .orderBy('completedAt', descending: true)
           .get();
       
       return snapshot.docs.map((doc) => TodoItem.fromFirestore(doc)).toList();
@@ -208,7 +188,6 @@ class FirestoreTodoService {
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .where('isCompleted', isEqualTo: false)
-          .orderBy('createdAt', descending: false)
           .get();
       
       return snapshot.docs.map((doc) => TodoItem.fromFirestore(doc)).toList();
@@ -400,7 +379,6 @@ class FirestoreTodoService {
     try {
       await _firestore!.collection(_collection).doc(todoId).update({
         'category': newCategory,
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
       });
       
       print('✅ 할일 카테고리 업데이트 성공: $todoId -> $newCategory');
@@ -633,17 +611,18 @@ class FirestoreTodoService {
     required String category,
   }) async {
     try {
-      final now = DateTime.now();
+      // 날짜만 저장 (시간 정보 완전 제거)
+      final dateToPersist = DateTime(dueDate.year, dueDate.month, dueDate.day);
       
       await _firestore!.collection(_collection).doc(todoId).update({
         'title': title,
         'priority': priority,
-        'dueDate': Timestamp.fromDate(dueDate),
+        'dueDate': Timestamp.fromDate(dateToPersist),
         'category': category,
-        'updatedAt': Timestamp.fromDate(now),
       });
       
       print('✅ Firestore에서 할일 수정 성공: $todoId');
+      print('📅 수정된 날짜: ${dateToPersist.toString()}');
       return true;
     } catch (e) {
       print('❌ 할일 수정 실패: $e');
