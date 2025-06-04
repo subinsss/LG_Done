@@ -17,9 +17,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-db = init_firebase("lg-dx-school-5eaae-firebase-adminsdk-fbsvc-41ea7b7d71.json")
-# HF_API_KEY = "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"  # 주석처리됨
-HF_API_KEY = os.getenv('HF_API_KEY', 'your_api_key_here')  # 환경변수에서 가져오기
+db = init_firebase("lg-dx-school-5eaae-firebase-adminsdk-fbsvc-41ea7b7d71.json")HF_API_KEY = os.getenv('HF_API_KEY', 'your_api_key_here')  # 환경변수에서 가져오기
 HF_API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
 
 
