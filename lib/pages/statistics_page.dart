@@ -1033,7 +1033,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           indicatorColor: Colors.white,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
-          isScrollable: true,
+          isScrollable: false,
           tabs: const [
             Tab(text: '일간'),
             Tab(text: '주간'),
@@ -1065,7 +1065,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     return SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
           _buildDateSelector('일간'),
           const SizedBox(height: 16),
@@ -1086,20 +1086,32 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       return const Center(child: Text('주간 데이터가 없습니다.'));
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildDateSelector('주간'),
-          const SizedBox(height: 16),
-          _buildAchievementBadges(_weeklyAchievements, '주간'),
-          _buildWeeklySummaryCard(),
-          const SizedBox(height: 20),
-            _buildWeeklyChart(),
+    return GestureDetector(
+      onPanUpdate: (details) {
+        // 스와이프 감지
+        if (details.delta.dx > 10) {
+          // 오른쪽 스와이프 - 이전주
+          _changePeriod('주간', -1);
+        } else if (details.delta.dx < -10) {
+          // 왼쪽 스와이프 - 다음주
+          _changePeriod('주간', 1);
+        }
+      },
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _buildDateSelector('주간'),
+            const SizedBox(height: 16),
+            _buildAchievementBadges(_weeklyAchievements, '주간'),
+            _buildWeeklySummaryCard(),
             const SizedBox(height: 20),
-          _buildCategoryChart(_weeklyData),
-        ],
+              _buildWeeklyChart(),
+              const SizedBox(height: 20),
+            _buildCategoryChart(_weeklyData),
+          ],
+        ),
       ),
     );
   }
@@ -1113,7 +1125,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           _buildDateSelector('월간'),
           const SizedBox(height: 16),
@@ -1137,7 +1149,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           _buildDateSelector('연간'),
           const SizedBox(height: 16),
