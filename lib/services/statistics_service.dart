@@ -71,19 +71,41 @@ class StatisticsService {
         String userId = data['userId'] ?? '';
         bool userMatch = userId == 'anonymous';
         
-        // 날짜 확인 - dueDate 기준으로 해당 날짜에 속하는지 확인
-        Timestamp? dueDate = data['dueDate'] as Timestamp?;
+        // 날짜 확인 - due_date_string 또는 dueDate 기준으로 해당 날짜에 속하는지 확인
         bool dateMatch = false;
         
-        if (dueDate != null) {
-          DateTime todoDate = dueDate.toDate();
-          // 수정: >= startOfDay && < endOfDay 로 변경 (해당 날짜 포함)
-          dateMatch = todoDate.isAtSameMomentAs(startOfDay) || 
-                     (todoDate.isAfter(startOfDay) && todoDate.isBefore(endOfDay));
+        DateTime? todoDate;
+        
+        // 새로운 문자열 필드 우선 체크
+        if (data['due_date_string'] != null) {
+          try {
+            todoDate = DateTime.parse(data['due_date_string']);
+          } catch (e) {
+            print('❌ 날짜 파싱 오류: ${data['due_date_string']}');
+          }
+        }
+        // 기존 dueDate 필드 체크 (하위 호환성)
+        else if (data['dueDate'] != null) {
+          if (data['dueDate'] is String) {
+            try {
+              todoDate = DateTime.parse(data['dueDate']);
+            } catch (e) {
+              print('❌ 날짜 파싱 오류: ${data['dueDate']}');
+            }
+          } else if (data['dueDate'] is Timestamp) {
+            todoDate = (data['dueDate'] as Timestamp).toDate();
+          }
+        }
+        
+        if (todoDate != null) {
+          // 날짜만 비교 (시간 무시)
+          final todoDateOnly = DateTime(todoDate.year, todoDate.month, todoDate.day);
+          final targetDateOnly = DateTime(date.year, date.month, date.day);
+          dateMatch = todoDateOnly.isAtSameMomentAs(targetDateOnly);
           
           print('   📅 할일 "${data['title']}" (${data['category']})');
-          print('      dueDate: $todoDate');
-          print('      사용자: $userId, 날짜매치: $dateMatch, 완료: ${data['isCompleted']}');
+          print('      dueDate: $todoDate (문자열: ${data['due_date_string'] ?? data['dueDate']})');
+          print('      사용자: $userId, 날짜매치: $dateMatch, 완료: ${data['is_completed']}');
         }
         
         bool shouldInclude = userMatch && dateMatch;
@@ -92,7 +114,7 @@ class StatisticsService {
       
       print('✅ 필터링된 할일 개수: ${filteredTodos.length}');
       
-      // 4. todos 데이터에서 통계 계산 - isCompleted: true인 것만 카운팅 (기존 데이터와 합치지 않음)
+      // 4. todos 데이터에서 통계 계산 - is_completed: true인 것만 카운팅 (기존 데이터와 합치지 않음)
       int totalTasks = filteredTodos.length;
       int completedTasks = 0;
       int totalStudyTime = 0;
@@ -104,7 +126,7 @@ class StatisticsService {
       
       for (QueryDocumentSnapshot doc in filteredTodos) {
         Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        bool isCompleted = data['isCompleted'] ?? false;
+        bool isCompleted = data['is_completed'] ?? data['isCompleted'] ?? false;
         
         if (isCompleted) {
           completedTodos.add(doc);
@@ -121,7 +143,7 @@ class StatisticsService {
         
         String title = data['title'] ?? '';
         String category = data['category'] ?? '';
-        bool isCompleted = data['isCompleted'] ?? false;
+        bool isCompleted = data['is_completed'] ?? data['isCompleted'] ?? false;
         int estimatedMinutes = 30; // 모든 할일 30분으로 고정
         
         print('✅ 완료된 할일: "$title" (${category}, ${estimatedMinutes}분)');
@@ -217,7 +239,7 @@ class StatisticsService {
     }
   }
 
-  // 주간 통계 데이터 가져오기 (Firebase 전용) - todos에서 직접 가져와서 isCompleted만 카운팅
+  // 주간 통계 데이터 가져오기 (Firebase 전용) - todos에서 직접 가져와서 is_completed만 카운팅
   Future<List<DailyStats>> getWeeklyStats() async {
     if (!await _isFirebaseAvailable()) {
       print('🔌 Firebase 연결 없음 - 빈 주간 데이터 반환');
@@ -225,7 +247,7 @@ class StatisticsService {
     }
 
     try {
-      print('🔄 Firebase 주간 통계 데이터 로드 (todos에서 isCompleted만)');
+      print('🔄 Firebase 주간 통계 데이터 로드 (todos에서 is_completed만)');
       
       // todos 컬렉션에서 모든 데이터 가져오기
       QuerySnapshot todosSnapshot = await _firestore!
@@ -253,19 +275,44 @@ class StatisticsService {
           String userId = data['userId'] ?? '';
           bool userMatch = userId == 'anonymous';
           
-          Timestamp? dueDate = data['dueDate'] as Timestamp?;
           bool dateMatch = false;
           
-          if (dueDate != null) {
-            DateTime todoDate = dueDate.toDate();
-            dateMatch = todoDate.isAtSameMomentAs(startOfDay) || 
-                       (todoDate.isAfter(startOfDay) && todoDate.isBefore(endOfDay));
+          if (data['dueDate'] != null) {
+            DateTime? todoDate;
+            
+            // 새로운 문자열 필드 우선 체크
+            if (data['due_date_string'] != null) {
+              try {
+                todoDate = DateTime.parse(data['due_date_string']);
+              } catch (e) {
+                print('❌ 날짜 파싱 오류: ${data['due_date_string']}');
+              }
+            }
+            // 기존 dueDate 필드 체크 (하위 호환성)
+            else if (data['dueDate'] != null) {
+              if (data['dueDate'] is String) {
+                try {
+                  todoDate = DateTime.parse(data['dueDate']);
+                } catch (e) {
+                  print('❌ 날짜 파싱 오류: ${data['dueDate']}');
+                }
+              } else if (data['dueDate'] is Timestamp) {
+                todoDate = (data['dueDate'] as Timestamp).toDate();
+              }
+            }
+            
+            if (todoDate != null) {
+              // 날짜만 비교 (시간 무시)
+              final todoDateOnly = DateTime(todoDate.year, todoDate.month, todoDate.day);
+              final targetDateOnly = DateTime(date.year, date.month, date.day);
+              dateMatch = todoDateOnly.isAtSameMomentAs(targetDateOnly);
+            }
           }
           
           return userMatch && dateMatch;
         }).toList();
         
-        // isCompleted: true인 할일만 통계에 포함
+        // is_completed: true인 할일만 통계에 포함
         int totalTasks = dayTodos.length;
         int completedTasks = 0;
         int totalStudyTime = 0;
@@ -273,7 +320,7 @@ class StatisticsService {
         
         for (QueryDocumentSnapshot doc in dayTodos) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          bool isCompleted = data['isCompleted'] ?? false;
+          bool isCompleted = data['is_completed'] ?? data['isCompleted'] ?? false;
           
           if (isCompleted) {
             String category = data['category'] ?? '기타';
@@ -292,7 +339,7 @@ class StatisticsService {
         Map<int, int> hourlyActivity = {};
         List<QueryDocumentSnapshot> completedDayTodos = dayTodos.where((doc) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          return data['isCompleted'] ?? false;
+          return data['is_completed'] ?? data['isCompleted'] ?? false;
         }).toList();
         
         for (QueryDocumentSnapshot doc in completedDayTodos) {
@@ -329,7 +376,7 @@ class StatisticsService {
     }
   }
 
-  // 월간 통계 데이터 가져오기 (Firebase 전용) - todos에서 직접 가져와서 isCompleted만 카운팅
+  // 월간 통계 데이터 가져오기 (Firebase 전용) - todos에서 직접 가져와서 is_completed만 카운팅
   Future<List<DailyStats>> getMonthlyStats() async {
     if (!await _isFirebaseAvailable()) {
       print('🔌 Firebase 연결 없음 - 빈 월간 데이터 반환');
@@ -337,7 +384,7 @@ class StatisticsService {
     }
 
     try {
-      print('🔄 Firebase 월간 통계 데이터 로드 (todos에서 isCompleted만)');
+      print('🔄 Firebase 월간 통계 데이터 로드 (todos에서 is_completed만)');
       
       // todos 컬렉션에서 모든 데이터 가져오기
       QuerySnapshot todosSnapshot = await _firestore!
@@ -364,19 +411,44 @@ class StatisticsService {
           String userId = data['userId'] ?? '';
           bool userMatch = userId == 'anonymous';
           
-          Timestamp? dueDate = data['dueDate'] as Timestamp?;
           bool dateMatch = false;
           
-          if (dueDate != null) {
-            DateTime todoDate = dueDate.toDate();
-            dateMatch = todoDate.isAtSameMomentAs(startOfDay) || 
-                       (todoDate.isAfter(startOfDay) && todoDate.isBefore(endOfDay));
+          if (data['dueDate'] != null) {
+            DateTime? todoDate;
+            
+            // 새로운 문자열 필드 우선 체크
+            if (data['due_date_string'] != null) {
+              try {
+                todoDate = DateTime.parse(data['due_date_string']);
+              } catch (e) {
+                print('❌ 날짜 파싱 오류: ${data['due_date_string']}');
+              }
+            }
+            // 기존 dueDate 필드 체크 (하위 호환성)
+            else if (data['dueDate'] != null) {
+              if (data['dueDate'] is String) {
+                try {
+                  todoDate = DateTime.parse(data['dueDate']);
+                } catch (e) {
+                  print('❌ 날짜 파싱 오류: ${data['dueDate']}');
+                }
+              } else if (data['dueDate'] is Timestamp) {
+                todoDate = (data['dueDate'] as Timestamp).toDate();
+              }
+            }
+            
+            if (todoDate != null) {
+              // 월 범위 비교 (해당 월에 속하는지 확인)
+              final todoDateOnly = DateTime(todoDate.year, todoDate.month, todoDate.day);
+              dateMatch = todoDateOnly.isAfter(DateTime(date.year, date.month, 1).subtract(Duration(days: 1))) && 
+                         todoDateOnly.isBefore(DateTime(date.year, date.month + 1, 1));
+            }
           }
           
           return userMatch && dateMatch;
         }).toList();
         
-        // isCompleted: true인 할일만 통계에 포함
+        // is_completed: true인 할일만 통계에 포함
         int totalTasks = dayTodos.length;
         int completedTasks = 0;
         int totalStudyTime = 0;
@@ -384,7 +456,7 @@ class StatisticsService {
         
         for (QueryDocumentSnapshot doc in dayTodos) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          bool isCompleted = data['isCompleted'] ?? false;
+          bool isCompleted = data['is_completed'] ?? data['isCompleted'] ?? false;
           
           if (isCompleted) {
             String category = data['category'] ?? '기타';
@@ -400,7 +472,7 @@ class StatisticsService {
         Map<int, int> hourlyActivity = {};
         List<QueryDocumentSnapshot> completedDayTodos = dayTodos.where((doc) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          return data['isCompleted'] ?? false;
+          return data['is_completed'] ?? data['isCompleted'] ?? false;
         }).toList();
         
         for (QueryDocumentSnapshot doc in completedDayTodos) {
@@ -439,7 +511,7 @@ class StatisticsService {
     }
   }
 
-  // 연간 통계 데이터 가져오기 (Firebase 전용) - todos에서 직접 가져와서 isCompleted만 카운팅
+  // 연간 통계 데이터 가져오기 (Firebase 전용) - todos에서 직접 가져와서 is_completed만 카운팅
   Future<List<MonthlyStats>> getYearlyStats() async {
     if (!await _isFirebaseAvailable()) {
       print('🔌 Firebase 연결 없음 - 빈 연간 데이터 반환');
@@ -447,7 +519,7 @@ class StatisticsService {
     }
 
     try {
-      print('🔄 Firebase 연간 통계 데이터 로드 (todos에서 isCompleted만)');
+      print('🔄 Firebase 연간 통계 데이터 로드 (todos에서 is_completed만)');
       
       // todos 컬렉션에서 모든 데이터 가져오기
       QuerySnapshot todosSnapshot = await _firestore!
@@ -474,19 +546,44 @@ class StatisticsService {
           String userId = data['userId'] ?? '';
           bool userMatch = userId == 'anonymous';
           
-          Timestamp? dueDate = data['dueDate'] as Timestamp?;
           bool dateMatch = false;
           
-          if (dueDate != null) {
-            DateTime todoDate = dueDate.toDate();
-            dateMatch = todoDate.isAfter(startOfMonth.subtract(Duration(days: 1))) && 
-                       todoDate.isBefore(endOfMonth);
+          if (data['dueDate'] != null) {
+            DateTime? todoDate;
+            
+            // 새로운 문자열 필드 우선 체크
+            if (data['due_date_string'] != null) {
+              try {
+                todoDate = DateTime.parse(data['due_date_string']);
+              } catch (e) {
+                print('❌ 날짜 파싱 오류: ${data['due_date_string']}');
+              }
+            }
+            // 기존 dueDate 필드 체크 (하위 호환성)
+            else if (data['dueDate'] != null) {
+              if (data['dueDate'] is String) {
+                try {
+                  todoDate = DateTime.parse(data['dueDate']);
+                } catch (e) {
+                  print('❌ 날짜 파싱 오류: ${data['dueDate']}');
+                }
+              } else if (data['dueDate'] is Timestamp) {
+                todoDate = (data['dueDate'] as Timestamp).toDate();
+              }
+            }
+            
+            if (todoDate != null) {
+              // 월 범위 비교 (해당 월에 속하는지 확인)
+              final todoDateOnly = DateTime(todoDate.year, todoDate.month, todoDate.day);
+              dateMatch = todoDateOnly.isAfter(startOfMonth.subtract(Duration(days: 1))) && 
+                         todoDateOnly.isBefore(endOfMonth);
+            }
           }
           
           return userMatch && dateMatch;
         }).toList();
         
-        // isCompleted: true인 할일만 통계에 포함
+        // is_completed: true인 할일만 통계에 포함
         int totalTasks = monthTodos.length;
         int completedTasks = 0;
         int totalStudyTime = 0;
@@ -494,7 +591,7 @@ class StatisticsService {
         
         for (QueryDocumentSnapshot doc in monthTodos) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          bool isCompleted = data['isCompleted'] ?? false;
+          bool isCompleted = data['is_completed'] ?? data['isCompleted'] ?? false;
           
           if (isCompleted) {
             String category = data['category'] ?? '기타';
@@ -691,19 +788,44 @@ class StatisticsService {
           String userId = data['userId'] ?? '';
           bool userMatch = userId == 'anonymous';
           
-          Timestamp? dueDate = data['dueDate'] as Timestamp?;
           bool dateMatch = false;
           
-          if (dueDate != null) {
-            DateTime todoDate = dueDate.toDate();
-            dateMatch = todoDate.isAtSameMomentAs(startOfDay) || 
-                       (todoDate.isAfter(startOfDay) && todoDate.isBefore(endOfDay));
+          if (data['dueDate'] != null) {
+            DateTime? todoDate;
+            
+            // 새로운 문자열 필드 우선 체크
+            if (data['due_date_string'] != null) {
+              try {
+                todoDate = DateTime.parse(data['due_date_string']);
+              } catch (e) {
+                print('❌ 날짜 파싱 오류: ${data['due_date_string']}');
+              }
+            }
+            // 기존 dueDate 필드 체크 (하위 호환성)
+            else if (data['dueDate'] != null) {
+              if (data['dueDate'] is String) {
+                try {
+                  todoDate = DateTime.parse(data['dueDate']);
+                } catch (e) {
+                  print('❌ 날짜 파싱 오류: ${data['dueDate']}');
+                }
+              } else if (data['dueDate'] is Timestamp) {
+                todoDate = (data['dueDate'] as Timestamp).toDate();
+              }
+            }
+            
+            if (todoDate != null) {
+              // 날짜만 비교 (시간 무시)
+              final todoDateOnly = DateTime(todoDate.year, todoDate.month, todoDate.day);
+              final targetDateOnly = DateTime(date.year, date.month, date.day);
+              dateMatch = todoDateOnly.isAtSameMomentAs(targetDateOnly);
+            }
           }
           
           return userMatch && dateMatch;
         }).toList();
         
-        // isCompleted: true인 할일만 통계에 포함
+        // is_completed: true인 할일만 통계에 포함
         int totalTasks = dayTodos.length;
         int completedTasks = 0;
         int totalStudyTime = 0;
@@ -712,7 +834,7 @@ class StatisticsService {
         
         List<QueryDocumentSnapshot> completedTodos = dayTodos.where((doc) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          return data['isCompleted'] ?? false;
+          return data['is_completed'] ?? data['isCompleted'] ?? false;
         }).toList();
         
         for (QueryDocumentSnapshot doc in completedTodos) {
@@ -789,19 +911,44 @@ class StatisticsService {
           String userId = data['userId'] ?? '';
           bool userMatch = userId == 'anonymous';
           
-          Timestamp? dueDate = data['dueDate'] as Timestamp?;
           bool dateMatch = false;
           
-          if (dueDate != null) {
-            DateTime todoDate = dueDate.toDate();
-            dateMatch = todoDate.isAtSameMomentAs(startOfDay) || 
-                       (todoDate.isAfter(startOfDay) && todoDate.isBefore(endOfDay));
+          if (data['dueDate'] != null) {
+            DateTime? todoDate;
+            
+            // 새로운 문자열 필드 우선 체크
+            if (data['due_date_string'] != null) {
+              try {
+                todoDate = DateTime.parse(data['due_date_string']);
+              } catch (e) {
+                print('❌ 날짜 파싱 오류: ${data['due_date_string']}');
+              }
+            }
+            // 기존 dueDate 필드 체크 (하위 호환성)
+            else if (data['dueDate'] != null) {
+              if (data['dueDate'] is String) {
+                try {
+                  todoDate = DateTime.parse(data['dueDate']);
+                } catch (e) {
+                  print('❌ 날짜 파싱 오류: ${data['dueDate']}');
+                }
+              } else if (data['dueDate'] is Timestamp) {
+                todoDate = (data['dueDate'] as Timestamp).toDate();
+              }
+            }
+            
+            if (todoDate != null) {
+              // 월 범위 비교 (해당 월에 속하는지 확인)
+              final todoDateOnly = DateTime(todoDate.year, todoDate.month, todoDate.day);
+              dateMatch = todoDateOnly.isAfter(DateTime(date.year, date.month, 1).subtract(Duration(days: 1))) && 
+                         todoDateOnly.isBefore(DateTime(date.year, date.month + 1, 1));
+            }
           }
           
           return userMatch && dateMatch;
         }).toList();
         
-        // isCompleted: true인 할일만 통계에 포함
+        // is_completed: true인 할일만 통계에 포함
         int totalTasks = dayTodos.length;
         int completedTasks = 0;
         int totalStudyTime = 0;
@@ -810,7 +957,7 @@ class StatisticsService {
         
         List<QueryDocumentSnapshot> completedTodos = dayTodos.where((doc) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          return data['isCompleted'] ?? false;
+          return data['is_completed'] ?? data['isCompleted'] ?? false;
         }).toList();
         
         for (QueryDocumentSnapshot doc in completedTodos) {
@@ -881,19 +1028,44 @@ class StatisticsService {
           String userId = data['userId'] ?? '';
           bool userMatch = userId == 'anonymous';
           
-          Timestamp? dueDate = data['dueDate'] as Timestamp?;
           bool dateMatch = false;
           
-          if (dueDate != null) {
-            DateTime todoDate = dueDate.toDate();
-            dateMatch = todoDate.isAfter(startOfMonth.subtract(Duration(days: 1))) && 
-                       todoDate.isBefore(endOfMonth);
+          if (data['dueDate'] != null) {
+            DateTime? todoDate;
+            
+            // 새로운 문자열 필드 우선 체크
+            if (data['due_date_string'] != null) {
+              try {
+                todoDate = DateTime.parse(data['due_date_string']);
+              } catch (e) {
+                print('❌ 날짜 파싱 오류: ${data['due_date_string']}');
+              }
+            }
+            // 기존 dueDate 필드 체크 (하위 호환성)
+            else if (data['dueDate'] != null) {
+              if (data['dueDate'] is String) {
+                try {
+                  todoDate = DateTime.parse(data['dueDate']);
+                } catch (e) {
+                  print('❌ 날짜 파싱 오류: ${data['dueDate']}');
+                }
+              } else if (data['dueDate'] is Timestamp) {
+                todoDate = (data['dueDate'] as Timestamp).toDate();
+              }
+            }
+            
+            if (todoDate != null) {
+              // 월 범위 비교 (해당 월에 속하는지 확인)
+              final todoDateOnly = DateTime(todoDate.year, todoDate.month, todoDate.day);
+              dateMatch = todoDateOnly.isAfter(startOfMonth.subtract(Duration(days: 1))) && 
+                         todoDateOnly.isBefore(endOfMonth);
+            }
           }
           
           return userMatch && dateMatch;
         }).toList();
         
-        // isCompleted: true인 할일만 통계에 포함
+        // is_completed: true인 할일만 통계에 포함
         int totalTasks = monthTodos.length;
         int completedTasks = 0;
         int totalStudyTime = 0;
@@ -901,7 +1073,7 @@ class StatisticsService {
         
         for (QueryDocumentSnapshot doc in monthTodos) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          bool isCompleted = data['isCompleted'] ?? false;
+          bool isCompleted = data['is_completed'] ?? data['isCompleted'] ?? false;
           
           if (isCompleted) {
             String category = data['category'] ?? '기타';
