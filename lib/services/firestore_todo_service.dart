@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class TodoItem {
   final String id;
@@ -21,12 +22,40 @@ class TodoItem {
 
   factory TodoItem.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    
+    // due_date_string이나 기존 dueDate 필드 체크
+    DateTime? parsedDate;
+    
+    // 새로운 문자열 필드 우선 체크
+    if (data['due_date_string'] != null) {
+      try {
+        parsedDate = DateTime.parse(data['due_date_string']);
+      } catch (e) {
+        print('❌ 날짜 파싱 오류: ${data['due_date_string']}');
+      }
+    }
+    // 기존 dueDate 필드 체크 (하위 호환성)
+    else if (data['dueDate'] != null) {
+      if (data['dueDate'] is String) {
+        try {
+          parsedDate = DateTime.parse(data['dueDate']);
+        } catch (e) {
+          print('❌ 날짜 파싱 오류: ${data['dueDate']}');
+        }
+      } else if (data['dueDate'] is Timestamp) {
+        parsedDate = data['dueDate'].toDate();
+      }
+    }
+    
+    // 기존 isCompleted와 새로운 is_completed 모두 지원
+    bool completed = data['is_completed'] ?? data['isCompleted'] ?? false;
+    
     return TodoItem(
       id: doc.id,
       title: data['title'] ?? '',
-      isCompleted: data['isCompleted'] ?? false,
+      isCompleted: completed,
       priority: data['priority'] ?? 'medium',
-      dueDate: data['dueDate']?.toDate(),
+      dueDate: parsedDate,
       userId: data['userId'] ?? 'anonymous',
       category: data['category'] ?? '',
     );
@@ -35,9 +64,9 @@ class TodoItem {
   Map<String, dynamic> toFirestore() {
     return {
       'title': title,
-      'isCompleted': isCompleted,
+      'is_completed': isCompleted,
       'priority': priority,
-      'dueDate': dueDate != null ? Timestamp.fromDate(dueDate!) : null,
+      'due_date_string': dueDate != null ? DateFormat('yyyy-MM-dd').format(dueDate!) : null,
       'userId': userId,
       'category': category,
     };
@@ -73,23 +102,24 @@ class FirestoreTodoService {
     required String category,
   }) async {
     try {
-      // 날짜만 저장 (시간 정보 완전 제거)
-      DateTime? dateToPersist;
+      // 날짜를 문자열로 저장 (YYYY-MM-DD 형식)
+      String? dateString;
       if (dueDate != null) {
-        dateToPersist = DateTime(dueDate.year, dueDate.month, dueDate.day);
+        final dateOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
+        dateString = DateFormat('yyyy-MM-dd').format(dateOnly);
       }
       
       final docRef = await _firestore!.collection(_collection).add({
         'title': title,
-        'isCompleted': false,
+        'is_completed': false,
         'priority': priority,
-        'dueDate': dateToPersist != null ? Timestamp.fromDate(dateToPersist) : null,
+        'due_date_string': dateString,
         'userId': _userId,
         'category': category,
       });
       
       print('✅ Firestore에 할일 추가 성공: $title (ID: ${docRef.id})');
-      print('📅 저장된 날짜: ${dateToPersist?.toString() ?? 'null'}');
+      print('📅 저장된 날짜: $dateString');
       return docRef.id;
     } catch (e) {
       print('❌ 할일 추가 실패: $e');
@@ -143,7 +173,7 @@ class FirestoreTodoService {
   Future<bool> toggleTodoCompletion(String todoId, bool isCompleted) async {
     try {
       await _firestore!.collection(_collection).doc(todoId).update({
-        'isCompleted': isCompleted,
+        'is_completed': isCompleted,
       });
       
       print('✅ Firestore에서 할일 상태 변경 성공: $todoId -> $isCompleted');
@@ -171,7 +201,7 @@ class FirestoreTodoService {
     try {
       final snapshot = await _firestore!.collection(_collection)
           .where('userId', isEqualTo: _userId)
-          .where('isCompleted', isEqualTo: true)
+          .where('is_completed', isEqualTo: true)
           .get();
       
       return snapshot.docs.map((doc) => TodoItem.fromFirestore(doc)).toList();
@@ -187,7 +217,7 @@ class FirestoreTodoService {
       final snapshot = await _firestore!
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
-          .where('isCompleted', isEqualTo: false)
+          .where('is_completed', isEqualTo: false)
           .get();
       
       return snapshot.docs.map((doc) => TodoItem.fromFirestore(doc)).toList();
@@ -206,7 +236,10 @@ class FirestoreTodoService {
           .get();
       
       int total = snapshot.docs.length;
-      int completed = snapshot.docs.where((doc) => doc.data()['isCompleted'] == true).length;
+      int completed = snapshot.docs.where((doc) {
+        final data = doc.data();
+        return data['is_completed'] ?? data['isCompleted'] ?? false;
+      }).length;
       int pending = total - completed;
       
       return {
@@ -611,18 +644,19 @@ class FirestoreTodoService {
     required String category,
   }) async {
     try {
-      // 날짜만 저장 (시간 정보 완전 제거)
-      final dateToPersist = DateTime(dueDate.year, dueDate.month, dueDate.day);
+      // 날짜를 문자열로 저장 (YYYY-MM-DD 형식)
+      final dateOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
+      final dateString = DateFormat('yyyy-MM-dd').format(dateOnly);
       
       await _firestore!.collection(_collection).doc(todoId).update({
         'title': title,
         'priority': priority,
-        'dueDate': Timestamp.fromDate(dateToPersist),
+        'due_date_string': dateString,
         'category': category,
       });
       
       print('✅ Firestore에서 할일 수정 성공: $todoId');
-      print('📅 수정된 날짜: ${dateToPersist.toString()}');
+      print('📅 수정된 날짜: $dateString');
       return true;
     } catch (e) {
       print('❌ 할일 수정 실패: $e');
