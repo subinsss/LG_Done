@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'pages/statistics_page.dart';
 import 'pages/simple_home_page.dart';
+import 'pages/ai_feedback_page.dart';
+import 'pages/settings_page.dart';
 import 'services/firestore_todo_service.dart';
 import 'services/statistics_service.dart';
 
@@ -80,8 +82,10 @@ class _MainTabPageState extends State<MainTabPage> {
   int _currentIndex = 0;
 
   final List<Widget> _pages = [
-    const SimpleHomePage(),      // 홈 (캐릭터 + 할일 + 피드백)
+    const SimpleHomePage(),      // 홈 (캐릭터 + 할일)
+    const AIFeedbackPage(),      // AI 피드백 (생산성 분석)
     const StatisticsPage(),     // 통계 (스터디 플래너)
+    const SettingsPage(),       // 환경설정
   ];
 
   @override
@@ -98,6 +102,7 @@ class _MainTabPageState extends State<MainTabPage> {
             _currentIndex = index;
           });
         },
+        type: BottomNavigationBarType.fixed,
         selectedItemColor: Colors.black,
         unselectedItemColor: Colors.grey.shade400,
         backgroundColor: Colors.white,
@@ -108,8 +113,16 @@ class _MainTabPageState extends State<MainTabPage> {
             label: '홈',
           ),
           BottomNavigationBarItem(
+            icon: Icon(Icons.auto_awesome),
+            label: 'AI 피드백',
+          ),
+          BottomNavigationBarItem(
             icon: Icon(Icons.analytics),
             label: '통계',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: '환경설정',
           ),
         ],
       ),

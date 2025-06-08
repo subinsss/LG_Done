@@ -982,10 +982,10 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(
+        title: const Text(
           '통계',
           style: TextStyle(
-            color: Theme.of(context).colorScheme.primary,
+            color: Colors.black,
             fontWeight: FontWeight.bold,
             fontSize: 22,
           ),
@@ -994,6 +994,8 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
         actions: [
           if (_isOfflineMode)
             IconButton(

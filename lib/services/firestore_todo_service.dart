@@ -9,6 +9,7 @@ class TodoItem {
   final DateTime? dueDate; // 시간 제외, 날짜만
   final String userId;
   final String category;
+  final int order; // 순서 필드 추가
 
   TodoItem({
     required this.id,
@@ -18,6 +19,7 @@ class TodoItem {
     this.dueDate,
     required this.userId,
     required this.category,
+    this.order = 0, // 기본값 0
   });
 
   factory TodoItem.fromFirestore(DocumentSnapshot doc) {
@@ -58,6 +60,7 @@ class TodoItem {
       dueDate: parsedDate,
       userId: data['userId'] ?? 'anonymous',
       category: data['category'] ?? '',
+      order: data['order'] ?? 0,
     );
   }
 
@@ -69,6 +72,7 @@ class TodoItem {
       'due_date_string': dueDate != null ? DateFormat('yyyy-MM-dd').format(dueDate!) : null,
       'userId': userId,
       'category': category,
+      'order': order,
     };
   }
 }
@@ -109,6 +113,16 @@ class FirestoreTodoService {
         dateString = DateFormat('yyyy-MM-dd').format(dateOnly);
       }
       
+      // 해당 카테고리와 날짜의 기존 할일 개수를 조회하여 순서 설정
+      final existingTodos = await _firestore!
+          .collection(_collection)
+          .where('userId', isEqualTo: _userId)
+          .where('category', isEqualTo: category)
+          .where('due_date_string', isEqualTo: dateString)
+          .get();
+      
+      final newOrder = existingTodos.docs.length;
+      
       final docRef = await _firestore!.collection(_collection).add({
         'title': title,
         'is_completed': false,
@@ -116,10 +130,12 @@ class FirestoreTodoService {
         'due_date_string': dateString,
         'userId': _userId,
         'category': category,
+        'order': newOrder,
       });
       
       print('✅ Firestore에 할일 추가 성공: $title (ID: ${docRef.id})');
       print('📅 저장된 날짜: $dateString');
+      print('📋 순서: $newOrder');
       return docRef.id;
     } catch (e) {
       print('❌ 할일 추가 실패: $e');
@@ -192,6 +208,71 @@ class FirestoreTodoService {
       return true;
     } catch (e) {
       print('❌ 할일 삭제 실패: $e');
+      return false;
+    }
+  }
+
+  // 할일 순서 변경 - 같은 카테고리, 같은 날짜 내에서만
+  Future<bool> reorderTodos(String category, DateTime date, int oldIndex, int newIndex) async {
+    try {
+      final dateString = DateFormat('yyyy-MM-dd').format(date);
+      
+      // 해당 카테고리와 날짜의 모든 할일 가져오기
+      final snapshot = await _firestore!
+          .collection(_collection)
+          .where('userId', isEqualTo: _userId)
+          .where('category', isEqualTo: category)
+          .where('due_date_string', isEqualTo: dateString)
+          .get();
+      
+      // 클라이언트 사이드에서 정렬
+      final todos = snapshot.docs.toList();
+      todos.sort((a, b) {
+        final aOrder = a.data()['order'] ?? 0;
+        final bOrder = b.data()['order'] ?? 0;
+        return aOrder.compareTo(bOrder);
+      });
+      
+      if (oldIndex >= todos.length || newIndex >= todos.length) {
+        print('❌ 인덱스 범위 초과: oldIndex=$oldIndex, newIndex=$newIndex, length=${todos.length}');
+        return false;
+      }
+      
+      // 배치로 업데이트
+      final batch = _firestore!.batch();
+      
+      // 순서 재배열
+      if (oldIndex < newIndex) {
+        // 뒤로 이동하는 경우
+        for (int i = oldIndex + 1; i <= newIndex; i++) {
+          batch.update(todos[i].reference, {'order': i - 1});
+        }
+        batch.update(todos[oldIndex].reference, {'order': newIndex});
+      } else {
+        // 앞으로 이동하는 경우
+        for (int i = newIndex; i < oldIndex; i++) {
+          batch.update(todos[i].reference, {'order': i + 1});
+        }
+        batch.update(todos[oldIndex].reference, {'order': newIndex});
+      }
+      
+      await batch.commit();
+      print('✅ 할일 순서 변경 성공: $category 카테고리에서 $oldIndex → $newIndex');
+      
+      // 변경 후 확인
+      print('📋 변경된 할일들:');
+      for (int i = 0; i < todos.length; i++) {
+        final data = todos[i].data();
+        final newOrder = i == oldIndex ? newIndex : 
+                        (oldIndex < newIndex && i > oldIndex && i <= newIndex) ? i - 1 :
+                        (oldIndex > newIndex && i >= newIndex && i < oldIndex) ? i + 1 : 
+                        data['order'];
+        print('  - ${data['title']}: 순서 ${data['order']} → $newOrder');
+      }
+      
+      return true;
+    } catch (e) {
+      print('❌ 할일 순서 변경 실패: $e');
       return false;
     }
   }

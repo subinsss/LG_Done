@@ -4,13 +4,15 @@ import 'package:flutter/services.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import 'dart:ui';
 import '../services/firestore_todo_service.dart';
-import '../widgets/local_ml_widget.dart';
 import '../screens/character_settings_page.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/profile_service.dart';
+import 'profile_edit_page.dart';
 
 class SimpleHomePage extends StatefulWidget {
   const SimpleHomePage({super.key});
@@ -26,6 +28,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   // 할일 목록 (Firestore에서 실시간으로 받아옴)
   List<TodoItem> _todos = [];
   StreamSubscription<List<TodoItem>>? _todosSubscription;
+  
+  // 드래그 중 상태 관리
+  bool _isDragging = false;
+  Map<String, List<TodoItem>> _localTodoOrder = {};
 
   // 카테고리 목록 (Firebase에서 실시간으로 받아옴)
   List<String> _categories = [];
@@ -100,6 +106,11 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   bool _isDataLoading = false;
 
   StreamSubscription<QuerySnapshot>? _selectedCharacterSubscription;
+  StreamSubscription<Map<String, dynamic>>? _profileSubscription;
+  
+  // 프로필 정보
+  String _userName = '사용자';
+  String _profileImageUrl = '';
 
   @override
   void initState() {
@@ -115,6 +126,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     _categoriesSubscription?.cancel();
     _categoryColorsSubscription?.cancel();
     _selectedCharacterSubscription?.cancel();
+    _profileSubscription?.cancel();
     super.dispose();
   }
 
@@ -128,6 +140,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       _listenToCategories();
       _listenToCategoryColors();
       _listenToSelectedCharacter();
+      _listenToProfile();
     } catch (e) {
       print('❌ 데이터 초기화 오류: $e');
     } finally {
@@ -135,6 +148,58 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         _isDataLoading = false;
       });
     }
+  }
+
+  // 프로필 실시간 감지
+  void _listenToProfile() {
+    _profileSubscription = ProfileService.getProfileStream().listen(
+      (profile) {
+        setState(() {
+          _userName = profile['name'] ?? '사용자';
+          _profileImageUrl = profile['profileImageUrl'] ?? '';
+        });
+        print('✅ 프로필 실시간 업데이트: ${profile['name']}');
+      },
+      onError: (error) {
+        print('❌ 프로필 스트림 오류: $error');
+        setState(() {
+          _userName = '사용자';
+          _profileImageUrl = '';
+        });
+      },
+    );
+  }
+
+  // 프로필 아이콘 생성
+  Widget _buildProfileIcon() {
+    return GestureDetector(
+      onTap: () async {
+        final result = await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const ProfileEditPage(),
+          ),
+        );
+        // 프로필 수정 후 돌아왔을 때는 실시간 스트림이 자동으로 업데이트함
+        // Firebase에서 실시간으로 감지하므로 별도 처리 불필요
+      },
+      child: CircleAvatar(
+        radius: 18,
+        backgroundColor: Colors.grey.shade300,
+        backgroundImage: _profileImageUrl.isNotEmpty 
+          ? NetworkImage(_profileImageUrl) 
+          : null,
+        child: _profileImageUrl.isEmpty 
+          ? Text(
+              _userName.isNotEmpty ? _userName[0].toUpperCase() : 'U',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.black54,
+              ),
+            )
+          : null,
+      ),
+    );
   }
 
   // 🔥 Firestore에서 선택된 캐릭터 실시간 감지
@@ -1076,7 +1141,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   ),
                 )
               else
-                ...categoryTodos.map((todo) => _buildTodoItem(todo)).toList(),
+                _buildReorderableTodoList(category, categoryTodos),
             ],
           ),
         );
@@ -1084,10 +1149,117 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     );
   }
 
-  Widget _buildTodoItem(TodoItem todo) {
+  // 드래그 앤 드롭 가능한 할일 목록
+  Widget _buildReorderableTodoList(String category, List<TodoItem> categoryTodos) {
+    // 순서별로 정렬
+    categoryTodos.sort((a, b) => a.order.compareTo(b.order));
+    
+    return Theme(
+      data: Theme.of(context).copyWith(
+        canvasColor: Colors.transparent,
+      ),
+      child: ReorderableListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: categoryTodos.length,
+        buildDefaultDragHandles: false, // 기본 드래그 핸들 비활성화
+        proxyDecorator: (child, index, animation) {
+          return AnimatedBuilder(
+            animation: animation,
+            builder: (BuildContext context, Widget? child) {
+              final double animValue = Curves.easeOutCubic.transform(animation.value);
+              final double elevation = lerpDouble(0, 8, animValue)!;
+              final double scale = lerpDouble(1, 1.05, animValue)!;
+              return Transform.scale(
+                scale: scale,
+                child: Material(
+                  elevation: elevation,
+                  color: Colors.white,
+                  shadowColor: Colors.black.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                  child: child,
+                ),
+              );
+            },
+            child: child,
+          );
+        },
+        onReorder: (oldIndex, newIndex) => _onReorderTodos(category, oldIndex, newIndex),
+        itemBuilder: (context, index) {
+          final todo = categoryTodos[index];
+          return ReorderableDelayedDragStartListener(
+            key: ValueKey('${todo.id}_${todo.order}_drag'),
+            index: index,
+            child: _buildTodoItem(todo, index),
+          );
+        },
+      ),
+    );
+  }
+
+  // 드래그 상태 추적
+  bool _isReordering = false;
+  
+  // 할일 순서 변경 처리 (부드러운 애니메이션)
+  void _onReorderTodos(String category, int oldIndex, int newIndex) async {
+    // ReorderableListView는 newIndex가 oldIndex보다 크면 1을 빼줘야 함
+    if (newIndex > oldIndex) {
+      newIndex -= 1;
+    }
+    
+    if (oldIndex == newIndex) return;
+    
+    print('🔄 할일 순서 변경 시도: $category 카테고리에서 $oldIndex → $newIndex');
+    
+    // 1. 드래그 상태 시작 - Firebase 스트림 업데이트 무시
+    setState(() {
+      _isReordering = true;
+    });
+    
+    // 2. Firebase 백그라운드 업데이트 (실패 시 롤백)
+    try {
+      final success = await _firestoreService.reorderTodos(
+        category, 
+        _selectedDay, 
+        oldIndex, 
+        newIndex
+      );
+      
+      if (!success) {
+        throw Exception('Firebase 업데이트 실패');
+      }
+      
+      print('✅ 할일 순서 변경 완료');
+    } catch (e) {
+      print('❌ 할일 순서 변경 실패: $e');
+      
+      // 실패 시 원래 상태로 롤백하지 않음 - Firebase 스트림이 자동으로 복원
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('할일 순서 변경에 실패했습니다'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      // 3. 드래그 상태 종료 - Firebase 스트림 다시 활성화
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (mounted) {
+        setState(() {
+          _isReordering = false;
+        });
+      }
+    }
+  }
+
+  Widget _buildTodoItem(TodoItem todo, int index) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      key: ValueKey('${todo.id}_${todo.order}'), // 더 안정적인 key
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start, // 상단 정렬로 변경
         children: [
           GestureDetector(
             onTap: () => _toggleTodo(todo),
@@ -1120,33 +1292,70 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                     decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
                     color: todo.isCompleted ? Colors.grey.shade500 : Colors.black87,
                   ),
+                  maxLines: null, // 무제한 줄 수
+                  softWrap: true, // 자동 줄바꿈
                 ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _getPriorityColor(todo.priority).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    _getPriorityText(todo.priority),
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: _getPriorityColor(todo.priority),
-                      fontWeight: FontWeight.w500,
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _getPriorityColor(todo.priority).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _getPriorityText(todo.priority),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: _getPriorityColor(todo.priority),
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          IconButton(
-            icon: Icon(Icons.edit_outlined, color: Colors.blue.shade400, size: 20),
-            onPressed: () => _showEditTodoDialog(todo),
+          // 수정 버튼
+          InkWell(
+            onTap: () => _showEditTodoDialog(todo),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              child: Icon(
+                Icons.edit_outlined, 
+                color: Colors.blue.shade400, 
+                size: 18,
+              ),
+            ),
           ),
-          IconButton(
-            icon: Icon(Icons.delete_outline, color: Colors.grey.shade400, size: 20),
-            onPressed: () => _deleteTodo(todo),
+          const SizedBox(width: 4),
+          // 삭제 버튼
+          InkWell(
+            onTap: () => _deleteTodo(todo),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              child: Icon(
+                Icons.delete_outline, 
+                color: Colors.grey.shade400, 
+                size: 18,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          // 실제 드래그 핸들 (맨 오른쪽)
+          ReorderableDragStartListener(
+            index: index,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Icon(
+                Icons.drag_handle,
+                color: Colors.grey.shade500,
+                size: 20,
+              ),
+            ),
           ),
         ],
       ),
@@ -1464,6 +1673,12 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         scrolledUnderElevation: 0, // 스크롤 시 elevation 효과 제거
         elevation: 0,
         centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: _buildProfileIcon(),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1.0),
           child: Container(
@@ -1578,23 +1793,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                     // 할일 목록
                     _buildTodoList(),
                     
-                    const SizedBox(height: 32),
-                    
-                    // ML 위젯
-                    LocalMLWidget(
-                      todos: _todos.map((todo) => {
-                        'title': todo.title,
-                        'isCompleted': todo.isCompleted,
-                        'priority': todo.priority,
-                      }).toList(),
-                      completionRate: _todos.isEmpty ? 0 : _todos.where((todo) => todo.isCompleted).length / _todos.length,
-                      totalTodos: _todos.length,
-                      completedTodos: _todos.where((todo) => todo.isCompleted).length,
-                      studyTimeMinutes: 60,
-                      currentMood: _todos.isEmpty ? 'encouraging' : 
-                                  (_todos.where((todo) => todo.isCompleted).length / _todos.length > 0.7 ? 'happy' : 
-                                   _todos.where((todo) => todo.isCompleted).length / _todos.length > 0.4 ? 'working' : 'encouraging'),
-                    ),
+
                   ],
                 ),
               ),
@@ -2102,85 +2301,246 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('할일 수정'),
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.grey.shade200, width: 1),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _getCategoryColor(todo.category).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.edit,
+                  color: _getCategoryColor(todo.category),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '할일 수정',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 할일 제목 입력
+                Text(
+                  '할일 제목',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 TextField(
                   controller: _todoController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: '할일을 입력하세요',
-                    border: OutlineInputBorder(),
-                    labelText: '할일',
+                    hintStyle: TextStyle(color: Colors.grey.shade400),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.black, width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                    contentPadding: const EdgeInsets.all(16),
                   ),
                   autofocus: true,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 
                 // 우선순위 선택
-                DropdownButtonFormField<String>(
-                  value: _selectedPriority,
-                  decoration: const InputDecoration(
-                    labelText: '우선순위',
-                    border: OutlineInputBorder(),
+                Text(
+                  '우선순위',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                    fontSize: 14,
                   ),
-                  items: const [
-                    DropdownMenuItem(value: 'high', child: Text('높음')),
-                    DropdownMenuItem(value: 'medium', child: Text('보통')),
-                    DropdownMenuItem(value: 'low', child: Text('낮음')),
-                  ],
-                  onChanged: (value) {
-                    setDialogState(() {
-                      _selectedPriority = value!;
-                    });
-                  },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedPriority,
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.all(16),
+                    ),
+                    dropdownColor: Colors.white,
+                    items: [
+                      DropdownMenuItem(
+                        value: 'high',
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade400,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('높음'),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'medium',
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade400,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('보통'),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'low',
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade400,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('낮음'),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setDialogState(() {
+                        _selectedPriority = value!;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
                 
                 // 카테고리 선택
-                DropdownButtonFormField<String>(
-                  value: _selectedCategory,
-                  decoration: const InputDecoration(
-                    labelText: '카테고리',
-                    border: OutlineInputBorder(),
+                Text(
+                  '카테고리',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                    fontSize: 14,
                   ),
-                  items: _categories.map((category) {
-                    return DropdownMenuItem(
-                      value: category,
-                      child: Text(category),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setDialogState(() {
-                      _selectedCategory = value!;
-                    });
-                  },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedCategory,
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.all(16),
+                    ),
+                    dropdownColor: Colors.white,
+                    items: _categories.map((category) {
+                      return DropdownMenuItem(
+                        value: category,
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: _getCategoryColor(category),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(category),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        _selectedCategory = value!;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
                 
-                // 날짜 표시 (수정 불가)
+                // 목표 날짜 표시 (수정 불가)
+                Text(
+                  '목표 날짜',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade50,
                     border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '날짜: ${DateFormat('yyyy년 M월 d일').format(todo.dueDate ?? DateTime.now())}',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
                       Icon(
                         Icons.calendar_today,
-                        color: Colors.grey.shade400,
+                        color: Colors.grey.shade600,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        DateFormat('yyyy년 M월 d일 (E)').format(todo.dueDate ?? DateTime.now()),
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
@@ -2194,7 +2554,14 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 _todoController.clear();
                 Navigator.of(context).pop();
               },
-              child: const Text('취소'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey.shade600,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: const Text(
+                '취소',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -2219,8 +2586,16 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
               ),
-              child: const Text('저장'),
+              child: const Text(
+                '저장',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
             ),
           ],
         ),
