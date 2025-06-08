@@ -7,7 +7,6 @@ import 'dart:async';
 import '../services/firestore_todo_service.dart';
 import '../widgets/local_ml_widget.dart';
 import '../screens/character_settings_page.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -42,7 +41,11 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   final TextEditingController _categoryController = TextEditingController();
   String _selectedPriority = 'medium';
   DateTime _selectedDate = DateTime.now();
-  String _selectedCategory = '';
+    String _selectedCategory = '';
+  
+  // 카테고리별 색상 저장 (Firebase에서 관리)
+  Map<String, Color> _categoryColors = {};
+  StreamSubscription<Map<String, int>>? _categoryColorsSubscription;
 
   // 캐릭터 커스터마이징을 위한 상태 추가
   String _selectedCharacter = 'emoji_default'; // 기본 이모지 캐릭터
@@ -110,6 +113,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     _categoryController.dispose();
     _todosSubscription?.cancel();
     _categoriesSubscription?.cancel();
+    _categoryColorsSubscription?.cancel();
     _selectedCharacterSubscription?.cancel();
     super.dispose();
   }
@@ -122,6 +126,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     try {
       _listenToTodos();
       _listenToCategories();
+      _listenToCategoryColors();
       _listenToSelectedCharacter();
     } catch (e) {
       print('❌ 데이터 초기화 오류: $e');
@@ -161,6 +166,261 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     }, onError: (error) {
       print('❌ 선택된 캐릭터 스트림 오류: $error');
     });
+  }
+
+  // 🔥 Firestore에서 카테고리 색상 실시간 감지
+  void _listenToCategoryColors() {
+    _categoryColorsSubscription = _firestoreService.getCategoryColorsStream().listen(
+      (categoryColors) {
+        setState(() {
+          _categoryColors = categoryColors.map(
+            (key, value) => MapEntry(key, Color(value)),
+          );
+        });
+        print('✅ 카테고리 색상 실시간 업데이트: $categoryColors');
+      },
+      onError: (error) {
+        print('❌ 카테고리 색상 스트림 오류: $error');
+        setState(() {
+          _categoryColors = {};
+        });
+      },
+    );
+  }
+
+  // 카테고리 색상 설정 (Firestore에 저장)
+  Future<void> _setCategoryColor(String category, Color color) async {
+    setState(() {
+      _categoryColors[category] = color;
+    });
+    
+    // Firestore에 색상 저장
+    final success = await _firestoreService.updateCategoryColor(category, color.value);
+    if (!success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('카테고리 색상 저장에 실패했습니다')),
+      );
+    }
+  }
+
+  // 색상 선택기 표시
+  void _showColorPicker(String category, StateSetter setDialogState) {
+    final colorGroups = {
+      '빨강': [Color(0xFFB71C1C), Color(0xFFD32F2F), Color(0xFFE53935), Color(0xFFEF5350), Color(0xFFFF5252), Color(0xFFFF6B6B)],
+      '분홍': [Color(0xFF880E4F), Color(0xFFAD1457), Color(0xFFE91E63), Color(0xFFEC407A), Color(0xFFF06292), Color(0xFFF48FB1)],
+      '보라': [Color(0xFF4A148C), Color(0xFF7B1FA2), Color(0xFF9C27B0), Color(0xFFBA68C8), Color(0xFFCE93D8), Color(0xFFE1BEE7)],
+      '인디고': [Color(0xFF1A237E), Color(0xFF303F9F), Color(0xFF3F51B5), Color(0xFF5C6BC0), Color(0xFF7986CB), Color(0xFF9FA8DA)],
+      '파랑': [Color(0xFF0D47A1), Color(0xFF1976D2), Color(0xFF2196F3), Color(0xFF42A5F5), Color(0xFF64B5F6), Color(0xFF90CAF9)],
+      '하늘': [Color(0xFF006064), Color(0xFF0097A7), Color(0xFF00BCD4), Color(0xFF26C6DA), Color(0xFF4DD0E1), Color(0xFF80DEEA)],
+      '청록': [Color(0xFF004D40), Color(0xFF00695C), Color(0xFF009688), Color(0xFF26A69A), Color(0xFF4DB6AC), Color(0xFF80CBC4)],
+      '초록': [Color(0xFF1B5E20), Color(0xFF388E3C), Color(0xFF4CAF50), Color(0xFF66BB6A), Color(0xFF81C784), Color(0xFFA5D6A7)],
+      '연두': [Color(0xFF33691E), Color(0xFF689F38), Color(0xFF8BC34A), Color(0xFF9CCC65), Color(0xFFAED581), Color(0xFFC5E1A5)],
+      '노랑': [Color(0xFFF57F17), Color(0xFFF9A825), Color(0xFFFFC107), Color(0xFFFFD54F), Color(0xFFFFE082), Color(0xFFFFECB3)],
+      '주황': [Color(0xFFE65100), Color(0xFFFF8F00), Color(0xFFFF9800), Color(0xFFFFA726), Color(0xFFFFB74D), Color(0xFFFFCC02)],
+      '갈색': [Color(0xFF3E2723), Color(0xFF5D4037), Color(0xFF795548), Color(0xFF8D6E63), Color(0xFFA1887F), Color(0xFFBCAAA4)],
+      '회색': [Color(0xFF212121), Color(0xFF424242), Color(0xFF616161), Color(0xFF757575), Color(0xFF9E9E9E), Color(0xFFBDBDBD)],
+    };
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 헤더
+              Row(
+                children: [
+                  Container(
+                    width: 6,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          _getCategoryColor(category),
+                          _getCategoryColor(category).withOpacity(0.7),
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '색상 선택',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          category,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: Colors.grey.shade600,
+                        size: 20,
+                      ),
+                      padding: const EdgeInsets.all(8),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              
+              // 색상 팔레트들 (색상별 분류)
+              Container(
+                height: 280,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: colorGroups.entries.map((entry) {
+                      final groupName = entry.key;
+                      final colors = entry.value;
+                      
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: colors.map((color) {
+                                final isSelected = _getCategoryColor(category) == color;
+                                
+                                return Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                                    child: GestureDetector(
+                                                                              onTap: () async {
+                                        await _setCategoryColor(category, color);
+                                        setDialogState(() {}); // 부모 다이얼로그 업데이트
+                                        
+                                        // 성공 피드백
+                                        HapticFeedback.mediumImpact();
+                                        
+                                        // 약간의 지연 후 닫기
+                                        Future.delayed(const Duration(milliseconds: 300), () {
+                                          Navigator.of(context).pop();
+                                        });
+                                      },
+                                      child: Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          color: color,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: isSelected ? Colors.white : Colors.grey.shade300,
+                                            width: isSelected ? 3 : 1,
+                                          ),
+
+                                        ),
+                                        child: isSelected
+                                            ? Container(
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black.withOpacity(0.3),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.check_rounded,
+                                                  color: Colors.white,
+                                                  size: 16,
+                                                ),
+                                              )
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // 완료 버튼
+              Container(
+                width: double.infinity,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.grey.shade100,
+                      Colors.grey.shade50,
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.grey.shade200,
+                    width: 1,
+                  ),
+
+                ),
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    '완료',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // 카테고리 목록 실시간 구독
@@ -315,20 +575,13 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         if (imageUrl.startsWith('data:image/')) {
           // Base64 이미지 처리
           return Container(
-            width: 120,
-            height: 120,
+            width: 150,
+            height: 150,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(60),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.purple.withOpacity(0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              borderRadius: BorderRadius.circular(75),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(60),
+              borderRadius: BorderRadius.circular(75),
               child: Image.memory(
                 base64Decode(imageUrl.split(',')[1]),
                 fit: BoxFit.cover,
@@ -342,17 +595,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         } else {
           // 일반 네트워크 이미지
           return Container(
-            width: 120,
-            height: 120,
+            width: 150,
+            height: 150,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(60),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.purple.withOpacity(0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              borderRadius: BorderRadius.circular(75),
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(60),
@@ -393,20 +639,13 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
           final Uint8List bytes = base64Decode(base64String);
           
           return Container(
-            width: 120,
-            height: 120,
+            width: 150,
+            height: 150,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(60),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.purple.withOpacity(0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              borderRadius: BorderRadius.circular(75),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(60),
+              borderRadius: BorderRadius.circular(75),
               child: Image.memory(
                 bytes,
                 fit: BoxFit.cover,
@@ -420,17 +659,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         } else {
           // 일반 네트워크 이미지
           return Container(
-            width: 120,
-            height: 120,
+            width: 150,
+            height: 150,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(60),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.purple.withOpacity(0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              borderRadius: BorderRadius.circular(75),
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(60),
@@ -485,20 +717,20 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     if (characterData['type'] == 'emoji') {
       return Text(
         characterDisplay,
-        style: const TextStyle(fontSize: 80),
+        style: const TextStyle(fontSize: 100),
         textAlign: TextAlign.center,
       );
     } else {
       return Container(
-        width: 120,
-        height: 120,
+        width: 150,
+        height: 150,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(60),
+          borderRadius: BorderRadius.circular(75),
           color: Colors.grey.shade200,
         ),
         child: Icon(
           Icons.person,
-          size: 60,
+          size: 75,
           color: Colors.grey.shade400,
         ),
       );
@@ -520,14 +752,11 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.pink.withOpacity(0.1),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -536,9 +765,9 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                DateFormat('yyyy년 M월 d일').format(_selectedDay),
+                DateFormat('M월 d일 (E)').format(_selectedDay),
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: Colors.black,
                 ),
@@ -561,16 +790,16 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatItem('전체', totalTodos, Colors.blue),
-              _buildStatItem('완료', completedTodos, Colors.green),
-              _buildStatItem('대기', pendingTodos, Colors.orange),
+              _buildStatItem('전체', totalTodos, Colors.black),
+              _buildStatItem('완료', completedTodos, Colors.black),
+              _buildStatItem('대기', pendingTodos, Colors.grey.shade600),
             ],
           ),
           
           // 접었다 폈다 할 수 있는 달력
           if (_isCalendarExpanded) ...[
             const SizedBox(height: 20),
-            const Divider(),
+            Divider(color: Colors.grey.shade200),
             const SizedBox(height: 10),
             TableCalendar<TodoItem>(
               firstDay: DateTime.utc(2020, 1, 1),
@@ -593,11 +822,32 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   color: Colors.grey.withOpacity(0.3),
                   shape: BoxShape.circle,
                 ),
-                markerDecoration: BoxDecoration(
-                  color: Colors.grey.shade600,
-                  shape: BoxShape.circle,
-                ),
-                markersMaxCount: 3,
+                markersMaxCount: 0, // 마커 숨기기
+              ),
+              calendarBuilders: CalendarBuilders(
+                markerBuilder: (context, day, events) {
+                  if (events.isNotEmpty) {
+                    return Positioned(
+                      bottom: 1,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        child: Text(
+                          '${events.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  return null;
+                },
               ),
               headerStyle: HeaderStyle(
                 formatButtonVisible: false,
@@ -631,26 +881,31 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Colors.grey.shade200,
+              width: 1,
+            ),
           ),
           child: Text(
             count.toString(),
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
               color: color,
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Text(
           label,
           style: TextStyle(
             fontSize: 12,
             color: Colors.grey.shade600,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
@@ -671,13 +926,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.pink.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
+                      border: Border.all(
+              color: Colors.grey.shade200,
+              width: 1,
             ),
-          ],
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -737,13 +989,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.pink.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
+            border: Border.all(
+              color: Colors.grey.shade200,
+              width: 1,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -905,41 +1154,13 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   }
 
   Color _getCategoryColor(String category) {
-    // 자주 사용되는 카테고리들에 대한 고정 색상
-    final predefinedColors = {
-      '업무': Colors.blue,
-      '개인': Colors.green,
-      '학습': Colors.purple,
-      '건강': Colors.orange,
-      '약속': Colors.cyan,
-      '꼭할일': Colors.red,
-      '집나가기전': Colors.amber,
-      '건우': Colors.teal,
-      '마루.아리': Colors.pink,
-    };
-
-    if (predefinedColors.containsKey(category)) {
-      return predefinedColors[category]!;
+    // 사용자가 설정한 색상이 있으면 그것을 사용
+    if (_categoryColors.containsKey(category)) {
+      return _categoryColors[category]!;
     }
 
-    // 새로운 카테고리에 대해서는 해시 기반으로 색상 할당
-    final colorOptions = [
-      Colors.blue,
-      Colors.green,
-      Colors.red,
-      Colors.purple,
-      Colors.orange,
-      Colors.cyan,
-      Colors.amber,
-      Colors.teal,
-      Colors.pink,
-      Colors.indigo,
-      Colors.lime,
-      Colors.deepOrange,
-    ];
-
-    final index = category.hashCode.abs() % colorOptions.length;
-    return colorOptions[index];
+    // 기본 색상 (블루그레이) - Firestore의 기본값과 일치
+    return Colors.blueGrey.shade600;
   }
 
   void _showAddTodoDialogForCategory(String category) {
@@ -952,64 +1173,195 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text('${category}에 할일 추가'),
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.grey.shade200, width: 1),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _getCategoryColor(category).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.add_task,
+                  color: _getCategoryColor(category),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '$category 할일 추가',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 할일 제목 입력
+                Text(
+                  '할일 제목',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 TextField(
                   controller: _todoController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: '할일을 입력하세요',
-                    border: OutlineInputBorder(),
-                    labelText: '할일',
+                    hintStyle: TextStyle(color: Colors.grey.shade400),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.black, width: 2),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                    contentPadding: const EdgeInsets.all(16),
                   ),
                   autofocus: true,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 
                 // 우선순위 선택
-                DropdownButtonFormField<String>(
-                  value: _selectedPriority,
-                  decoration: const InputDecoration(
-                    labelText: '우선순위',
-                    border: OutlineInputBorder(),
+                Text(
+                  '우선순위',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                    fontSize: 14,
                   ),
-                  items: const [
-                    DropdownMenuItem(value: 'high', child: Text('높음')),
-                    DropdownMenuItem(value: 'medium', child: Text('보통')),
-                    DropdownMenuItem(value: 'low', child: Text('낮음')),
-                  ],
-                  onChanged: (value) {
-                    setDialogState(() {
-                      _selectedPriority = value!;
-                    });
-                  },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedPriority,
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.all(16),
+                    ),
+                    dropdownColor: Colors.white,
+                    items: [
+                      DropdownMenuItem(
+                        value: 'high',
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade400,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('높음'),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'medium',
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade400,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('보통'),
+                          ],
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'low',
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade400,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('낮음'),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setDialogState(() {
+                        _selectedPriority = value!;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
                 
-                // 선택된 날짜 표시 (수정 불가)
+                // 선택된 날짜 표시
+                Text(
+                  '목표 날짜',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade50,
                     border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '날짜: ${DateFormat('yyyy년 M월 d일').format(_selectedDay)}',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
                       Icon(
                         Icons.calendar_today,
-                        color: Colors.grey.shade400,
+                        color: Colors.grey.shade600,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        DateFormat('yyyy년 M월 d일 (E)').format(_selectedDay),
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
@@ -1023,15 +1375,30 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 _todoController.clear();
                 Navigator.of(context).pop();
               },
-              child: const Text('취소'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey.shade600,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: const Text(
+                '취소',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
             ),
             ElevatedButton(
               onPressed: _addTodo,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
               ),
-              child: const Text('추가'),
+              child: const Text(
+                '추가',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
             ),
           ],
         ),
@@ -1073,163 +1440,167 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        title: const Text(
-          '할일 관리',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+      backgroundColor: Colors.white,
+            appBar: AppBar(
+        toolbarHeight: 60,  // 앱바 높이 줄임
+        title: Image.asset(
+          'assets/icon/done_logo.png',
+          fit: BoxFit.contain,
+          height: 145,  // 로고 크기를 더 크게!
+          errorBuilder: (context, error, stackTrace) {
+            print('제목 이미지 로드 오류: $error');
+            return Text(
+              '할일 관리',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.bold,
+                fontSize: 22,
+              ),
+            );
+          },
         ),
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent, // 스크롤 시 색상 변화 방지
+        scrolledUnderElevation: 0, // 스크롤 시 elevation 효과 제거
         elevation: 0,
         centerTitle: true,
-        actions: [
-          // 프리미엄 테스트 버튼
-          IconButton(
-            onPressed: () {
-              setState(() {
-                _isPremiumUser = !_isPremiumUser;
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    _isPremiumUser ? 'Premium 모드로 변경되었습니다' : 'Free 모드로 변경되었습니다',
-                  ),
-                  backgroundColor: _isPremiumUser ? Colors.amber.shade600 : Colors.grey.shade600,
-                ),
-              );
-            },
-            icon: Icon(
-              _isPremiumUser ? Icons.star : Icons.star_border,
-              color: _isPremiumUser ? Colors.yellow.shade200 : Colors.white,
-            ),
-            tooltip: _isPremiumUser ? 'Premium 모드' : 'Free 모드 (탭하여 변경)',
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(
+            color: Colors.grey.shade200,
+            height: 1.0,
           ),
-        ],
+        ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 캐릭터 이미지
-            Container(
-              width: double.infinity,
-              alignment: Alignment.center,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // 캐릭터 이미지 (터치 가능)
-                  GestureDetector(
-                    onTap: _showCharacterSettings,
-                    child: _buildCharacterImage(),
-                  ),
-                  
-                  // 설정 버튼 (우상단)
-                  Positioned(
-                    top: 0,
-                    right: 20,
-                    child: GestureDetector(
-                      onTap: _showCharacterSettings,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.settings,
-                          size: 20,
-                          color: Colors.black,
-                        ),
-                      ),
+              body: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 상단 헤더 섹션
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    bottom: BorderSide(
+                      color: Colors.grey.shade200,
+                      width: 1,
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            
-            // 빠른 통계
-            _buildQuickStats(),
-            const SizedBox(height: 20),
-            
-            // 할일 목록 제목
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '할일 목록',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
                   ),
                 ),
-                Row(
+                child: Column(
                   children: [
-                    Text(
-                      '${_todos.where((todo) {
-                        if (todo.dueDate == null) return false;
-                        return isSameDay(todo.dueDate!, _selectedDay);
-                      }).length}개',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey.shade500,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      onPressed: _showCategoryManagementDialog,
-                      icon: const Icon(Icons.category, size: 18),
-                      label: const Text('카테고리 관리'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
+                    // 캐릭터 이미지
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // 캐릭터 이미지 (터치 가능)
+                        GestureDetector(
+                          onTap: _showCharacterSettings,
+                          child: _buildCharacterImage(),
                         ),
-                      ),
+                        
+                        // 설정 버튼 (우상단)
+                        Positioned(
+                          top: 0,
+                          right: 20,
+                          child: GestureDetector(
+                            onTap: _showCharacterSettings,
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.grey.shade300,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.settings,
+                                size: 18,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    
+                    // 빠른 통계
+                    _buildQuickStats(),
+                  ],
+                ),
+              ),
+              
+              // 메인 컨텐츠 섹션
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+            
+                                // 관리 버튼과 할일 개수
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '${_todos.where((todo) {
+                            if (todo.dueDate == null) return false;
+                            return isSameDay(todo.dueDate!, _selectedDay);
+                          }).length}개의 할일',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _showCategoryManagementDialog,
+                          icon: const Icon(Icons.category, size: 16),
+                          label: const Text('관리'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    
+                    // 할일 목록
+                    _buildTodoList(),
+                    
+                    const SizedBox(height: 32),
+                    
+                    // ML 위젯
+                    LocalMLWidget(
+                      todos: _todos.map((todo) => {
+                        'title': todo.title,
+                        'isCompleted': todo.isCompleted,
+                        'priority': todo.priority,
+                      }).toList(),
+                      completionRate: _todos.isEmpty ? 0 : _todos.where((todo) => todo.isCompleted).length / _todos.length,
+                      totalTodos: _todos.length,
+                      completedTodos: _todos.where((todo) => todo.isCompleted).length,
+                      studyTimeMinutes: 60,
+                      currentMood: _todos.isEmpty ? 'encouraging' : 
+                                  (_todos.where((todo) => todo.isCompleted).length / _todos.length > 0.7 ? 'happy' : 
+                                   _todos.where((todo) => todo.isCompleted).length / _todos.length > 0.4 ? 'working' : 'encouraging'),
                     ),
                   ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            
-            // 할일 목록
-            _buildTodoList(),
-            
-            const SizedBox(height: 20),
-            
-            // ML 위젯
-            LocalMLWidget(
-              todos: _todos.map((todo) => {
-                'title': todo.title,
-                'isCompleted': todo.isCompleted,
-                'priority': todo.priority,
-              }).toList(),
-              completionRate: _todos.isEmpty ? 0 : _todos.where((todo) => todo.isCompleted).length / _todos.length,
-              totalTodos: _todos.length,
-              completedTodos: _todos.where((todo) => todo.isCompleted).length,
-              studyTimeMinutes: 60,
-              currentMood: _todos.isEmpty ? 'encouraging' : 
-                          (_todos.where((todo) => todo.isCompleted).length / _todos.length > 0.7 ? 'happy' : 
-                           _todos.where((todo) => todo.isCompleted).length / _todos.length > 0.4 ? 'working' : 'encouraging'),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
-      ),
     );
   }
 
@@ -1238,11 +1609,21 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Row(
             children: [
               Icon(Icons.category, color: Colors.black),
               const SizedBox(width: 8),
-              const Text('카테고리 관리'),
+              Text(
+                '카테고리 관리',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
           content: SizedBox(
@@ -1254,8 +1635,12 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.grey.shade200,
+                      width: 1,
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1265,28 +1650,47 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.black,
+                          fontSize: 14,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
                             child: TextField(
                               controller: _categoryController,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 hintText: '카테고리 이름',
-                                border: OutlineInputBorder(),
-                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                hintStyle: TextStyle(color: Colors.grey.shade400),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(color: Colors.black, width: 2),
+                                ),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                filled: true,
+                                fillColor: Colors.white,
                               ),
                               onSubmitted: (_) => _addCategoryFromDialog(setDialogState),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 12),
                           ElevatedButton(
                             onPressed: () => _addCategoryFromDialog(setDialogState),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.black,
                               foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             ),
                             child: const Text('추가'),
                           ),
@@ -1295,7 +1699,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 
                 // 카테고리 목록 섹션
                 Expanded(
@@ -1306,10 +1710,11 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                         '현재 카테고리 (${_categories.length}개)',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade700,
+                          color: Colors.black,
+                          fontSize: 14,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       Expanded(
                         child: _categories.isEmpty
                             ? Center(
@@ -1321,11 +1726,12 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                                       size: 48,
                                       color: Colors.grey.shade300,
                                     ),
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 12),
                                     Text(
                                       '카테고리가 없습니다',
                                       style: TextStyle(
-                                        color: Colors.grey.shade500,
+                                        color: Colors.grey.shade400,
+                                        fontSize: 14,
                                       ),
                                     ),
                                   ],
@@ -1335,24 +1741,68 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                                 itemCount: _categories.length,
                                 itemBuilder: (context, index) {
                                   final category = _categories[index];
-                                  return Card(
+                                  return Container(
                                     margin: const EdgeInsets.only(bottom: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.grey.shade200,
+                                        width: 1,
+                                      ),
+                                    ),
                                     child: ListTile(
-                                      leading: Container(
-                                        width: 12,
-                                        height: 12,
-                                        decoration: BoxDecoration(
-                                          color: _getCategoryColor(category),
-                                          shape: BoxShape.circle,
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                      leading: GestureDetector(
+                                        onTap: () => _showColorPicker(category, setDialogState),
+                                        child: Container(
+                                          width: 24,
+                                          height: 24,
+                                          decoration: BoxDecoration(
+                                            color: _getCategoryColor(category),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Colors.white,
+                                              width: 2,
+                                            ),
+
+                                          ),
+                                          child: Icon(
+                                            Icons.palette,
+                                            color: Colors.white,
+                                            size: 12,
+                                          ),
                                         ),
                                       ),
-                                      title: Text(category),
-                                      trailing: IconButton(
-                                        icon: Icon(
-                                          Icons.delete_outline,
-                                          color: Colors.red.shade400,
+                                      title: Text(
+                                        category,
+                                        style: TextStyle(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.w500,
                                         ),
-                                        onPressed: () => _deleteCategoryFromDialog(category, setDialogState),
+                                      ),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: Icon(
+                                              Icons.edit_outlined,
+                                              color: Colors.grey.shade600,
+                                              size: 20,
+                                            ),
+                                            onPressed: () => _showEditCategoryDialog(category, setDialogState),
+                                            tooltip: '이름 변경',
+                                          ),
+                                          IconButton(
+                                            icon: Icon(
+                                              Icons.delete_outline,
+                                              color: Colors.grey.shade600,
+                                              size: 20,
+                                            ),
+                                            onPressed: () => _deleteCategoryFromDialog(category, setDialogState),
+                                            tooltip: '삭제',
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   );
@@ -1368,6 +1818,9 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey.shade600,
+              ),
               child: const Text('닫기'),
             ),
           ],
@@ -1380,8 +1833,11 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     if (_categoryController.text.trim().isNotEmpty) {
       final newCategory = _categoryController.text.trim();
       if (!_categories.contains(newCategory)) {
-        // categories 컬렉션에 직접 추가 (더미 할일 생성하지 않음)
-        final categoryId = await _firestoreService.addCategory(newCategory);
+        // categories 컬렉션에 기본 색상과 함께 추가
+        final categoryId = await _firestoreService.addCategory(
+          newCategory, 
+          colorValue: Colors.blueGrey.shade600.value, // 기본 색상
+        );
         
         if (categoryId != null) {
           _categoryController.clear();
@@ -1410,15 +1866,177 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     }
   }
 
+  void _showEditCategoryDialog(String oldCategory, StateSetter setDialogState) {
+    final TextEditingController editController = TextEditingController(text: oldCategory);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Text(
+          '카테고리 이름 변경',
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '새로운 카테고리 이름을 입력해주세요.',
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: editController,
+              decoration: InputDecoration(
+                labelText: '카테고리 이름',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.black),
+                ),
+              ),
+              autofocus: true,
+              maxLength: 20,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              editController.dispose();
+              Navigator.of(context).pop();
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.grey.shade600,
+            ),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newCategoryName = editController.text.trim();
+              
+              if (newCategoryName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('카테고리 이름을 입력해주세요')),
+                );
+                return;
+              }
+              
+              if (newCategoryName == oldCategory) {
+                editController.dispose();
+                Navigator.of(context).pop();
+                return;
+              }
+              
+              if (_categories.contains(newCategoryName)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('이미 존재하는 카테고리 이름입니다')),
+                );
+                return;
+              }
+              
+              Navigator.of(context).pop(); // 다이얼로그 닫기
+              
+              try {
+                final success = await _firestoreService.updateCategoryName(oldCategory, newCategoryName);
+                if (success) {
+                  // 다이얼로그 내 UI 즉시 업데이트
+                  setDialogState(() {
+                    final index = _categories.indexOf(oldCategory);
+                    if (index != -1) {
+                      _categories[index] = newCategoryName;
+                      _categories.sort(); // 정렬 유지
+                    }
+                    // 선택된 카테고리도 업데이트
+                    if (_selectedCategory == oldCategory) {
+                      _selectedCategory = newCategoryName;
+                    }
+                    // 색상 정보도 업데이트
+                    if (_categoryColors.containsKey(oldCategory)) {
+                      final color = _categoryColors[oldCategory]!;
+                      _categoryColors.remove(oldCategory);
+                      _categoryColors[newCategoryName] = color;
+                    }
+                  });
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('카테고리 이름이 "$newCategoryName"으로 변경되었습니다'),
+                      backgroundColor: Colors.black,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('카테고리 이름 변경에 실패했습니다'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('카테고리 이름 변경에 실패했습니다'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              } finally {
+                editController.dispose();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('변경'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _deleteCategoryFromDialog(String category, StateSetter setDialogState) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('카테고리 삭제'),
-        content: Text('카테고리 "$category"를 삭제하시겠습니까?\n이 카테고리의 모든 할일도 함께 삭제됩니다.'),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Text(
+          '카테고리 삭제',
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          '카테고리 "$category"를 삭제하시겠습니까?\n이 카테고리의 모든 할일도 함께 삭제됩니다.',
+          style: TextStyle(
+            color: Colors.grey.shade700,
+            height: 1.5,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.grey.shade600,
+            ),
             child: const Text('취소'),
           ),
           ElevatedButton(
@@ -1440,29 +2058,32 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('카테고리 "$category"가 삭제되었습니다'),
-                      backgroundColor: Colors.green,
+                      backgroundColor: Colors.black,
                     ),
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
+                    SnackBar(
                       content: Text('카테고리 삭제에 실패했습니다'),
-                      backgroundColor: Colors.red,
+                      backgroundColor: Colors.grey.shade600,
                     ),
                   );
                 }
               } catch (e) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
+                  SnackBar(
                     content: Text('카테고리 삭제에 실패했습니다'),
-                    backgroundColor: Colors.red,
+                    backgroundColor: Colors.grey.shade600,
                   ),
                 );
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade400,
+              backgroundColor: Colors.black,
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             child: const Text('삭제'),
           ),

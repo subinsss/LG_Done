@@ -12,7 +12,7 @@ import 'package:ThinQ/pages/character_selection_page.dart';
 import 'package:ThinQ/pages/character_customization_page.dart';
 import 'package:ThinQ/pages/thinq_hub_page.dart';
 import 'package:ThinQ/pages/premium_subscription_page.dart';
-import 'package:ThinQ/pages/task_page.dart';
+
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -24,7 +24,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   List<Task> _tasks = [];
   List<String> _activeUsers = [];
-  int _currentIndex = 1;
+  int _currentIndex = 0;
   int _totalMinutes = 0;
   bool _isPremium = false;
   bool _isLoading = true;
@@ -119,10 +119,6 @@ class _HomePageState extends State<HomePage> {
         type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.history),
-            label: '내역',
-          ),
-          BottomNavigationBarItem(
             icon: Icon(Icons.manage_accounts),
             label: '관리',
           ),
@@ -140,7 +136,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _handleNavigationTap(int index) {
-    if (index == 3) {
+    if (index == 2) {
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -149,7 +145,7 @@ class _HomePageState extends State<HomePage> {
       ).then((_) {
         if (mounted) {
           setState(() {
-            _currentIndex = 1;
+            _currentIndex = 0;
           });
         }
       });
@@ -195,10 +191,8 @@ class _HomePageState extends State<HomePage> {
   Widget _buildBody() {
     switch (_currentIndex) {
       case 0:
-        return const TaskPage();
-      case 1:
         return _buildManagementPage();
-      case 2:
+      case 1:
         return const Center(child: Text('통계 페이지 (준비 중)'));
       default:
         return _buildManagementPage();
@@ -384,14 +378,17 @@ class _HomePageState extends State<HomePage> {
         },
         style: ElevatedButton.styleFrom(
           backgroundColor: isSelected 
-              ? Theme.of(context).colorScheme.primary 
+              ? Colors.transparent 
               : Colors.grey[200],
           foregroundColor: isSelected 
-              ? Colors.white 
+              ? Colors.black 
               : Colors.grey[800],
-          elevation: isSelected ? 2 : 0,
+          elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
+            side: isSelected 
+                ? BorderSide(color: Colors.grey.shade400, width: 1)
+                : BorderSide.none,
           ),
         ),
         child: Text(title),
@@ -493,6 +490,19 @@ class _HomePageState extends State<HomePage> {
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
+      leading: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Center(
+          child: Text(
+            'LG:Done',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ),
+      ),
       title: Text(
         'ThinQ',
         style: TextStyle(

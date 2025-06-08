@@ -44,7 +44,7 @@ class AICharacterService {
           'prompt': prompt,
           'style': style,
         }),
-      ).timeout(const Duration(seconds: 60)); // 타임아웃 단축
+      ).timeout(const Duration(minutes: 5)); // 타임아웃 5분으로 늘리기
       
       final data = jsonDecode(response.body);
       

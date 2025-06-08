@@ -81,16 +81,15 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.all(16),
-      elevation: 6,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
+      ),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            colors: [Colors.purple.shade50, Colors.blue.shade50],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          color: Colors.white,
         ),
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -103,7 +102,7 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.purple.shade600,
+                      color: Colors.black,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -117,19 +116,19 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '🧠 AI 기반 피드백',
+                        const Text(
+                          'AI 기반 피드백',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
-                            color: Colors.purple.shade700,
+                            color: Colors.black,
                           ),
                         ),
                         Text(
                           '내장 ML 모델 기반 분석',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.purple.shade500,
+                            color: Colors.grey.shade600,
                           ),
                         ),
                       ],
@@ -154,15 +153,15 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                           ),
                         )
                       : const Icon(Icons.psychology),
-                  label: Text(_isLoading ? 'AI 분석 중...' : '🚀 AI 분석 시작'),
+                  label: Text(_isLoading ? 'AI 분석 중...' : 'AI 분석 시작'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple.shade600,
+                    backgroundColor: Colors.black,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    elevation: 4,
+                    elevation: 0,
                   ),
                 ),
               ),
@@ -232,22 +231,22 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade200),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.feedback_outlined, color: Colors.blue.shade600, size: 20),
+              Icon(Icons.feedback_outlined, color: Colors.black, size: 20),
               const SizedBox(width: 8),
-              Text(
-                '📊 생산성 피드백',
+              const Text(
+                '생산성 피드백',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: Colors.blue.shade800,
+                  color: Colors.black,
                   fontSize: 16,
                 ),
               ),
@@ -257,7 +256,7 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
           Text(
             _feedback!.feedback,
             style: TextStyle(
-              color: Colors.blue.shade700,
+              color: Colors.grey.shade700,
               fontSize: 14,
               height: 1.4,
             ),
@@ -274,13 +273,13 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
             ),
             child: Row(
               children: [
-                Icon(Icons.trending_up, color: Colors.blue.shade600, size: 18),
+                Icon(Icons.trending_up, color: Colors.black, size: 18),
                 const SizedBox(width: 8),
-                Text(
+                const Text(
                   '생산성 점수: ',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: Colors.blue.shade800,
+                    color: Colors.black,
                   ),
                 ),
                 Text(
@@ -289,10 +288,10 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
                     color: _feedback!.productivityScore > 0.7
-                        ? Colors.green.shade600
+                        ? Colors.grey.shade800
                         : _feedback!.productivityScore > 0.4
-                            ? Colors.orange.shade600
-                            : Colors.red.shade600,
+                            ? Colors.grey.shade600
+                            : Colors.grey.shade500,
                   ),
                 ),
                 const Spacer(),
@@ -309,10 +308,10 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                     child: Container(
                       decoration: BoxDecoration(
                         color: _feedback!.productivityScore > 0.7
-                            ? Colors.green.shade600
+                            ? Colors.grey.shade800
                             : _feedback!.productivityScore > 0.4
-                                ? Colors.orange.shade600
-                                : Colors.red.shade600,
+                                ? Colors.grey.shade600
+                                : Colors.grey.shade500,
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -324,11 +323,11 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
           
           if (_feedback!.suggestions.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(
-              '💡 AI 제안사항:',
+            const Text(
+              'AI 제안사항:',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: Colors.blue.shade800,
+                color: Colors.black,
               ),
             ),
             const SizedBox(height: 8),
@@ -342,7 +341,7 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                         width: 4,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade600,
+                          color: Colors.grey.shade600,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -352,7 +351,7 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                           suggestion,
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.blue.shade700,
+                            color: Colors.grey.shade700,
                             height: 1.3,
                           ),
                         ),
@@ -370,22 +369,22 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.green.shade50,
+        color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.green.shade200),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.timeline, color: Colors.green.shade600, size: 20),
+              Icon(Icons.timeline, color: Colors.black, size: 20),
               const SizedBox(width: 8),
-              Text(
-                '🔮 생산성 예측',
+              const Text(
+                '생산성 예측',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: Colors.green.shade800,
+                  color: Colors.black,
                   fontSize: 16,
                 ),
               ),
@@ -395,7 +394,7 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
           Text(
             _prediction!.recommendation,
             style: TextStyle(
-              color: Colors.green.shade700,
+              color: Colors.grey.shade700,
               fontSize: 14,
               height: 1.4,
             ),
@@ -419,7 +418,7 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                         '예상 생산성',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.green.shade600,
+                          color: Colors.grey.shade600,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -429,7 +428,7 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Colors.green.shade700,
+                          color: Colors.black,
                         ),
                       ),
                     ],
@@ -451,7 +450,7 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                         '최적 학습시간',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.green.shade600,
+                          color: Colors.grey.shade600,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -461,7 +460,7 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Colors.green.shade700,
+                          color: Colors.black,
                         ),
                       ),
                     ],
@@ -479,22 +478,22 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.orange.shade50,
+        color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.shade200),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.recommend, color: Colors.orange.shade600, size: 20),
+              Icon(Icons.recommend, color: Colors.black, size: 20),
               const SizedBox(width: 8),
-              Text(
-                '🎯 스마트 추천',
+              const Text(
+                '스마트 추천',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: Colors.orange.shade800,
+                  color: Colors.black,
                   fontSize: 16,
                 ),
               ),
@@ -508,59 +507,59 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.orange.shade100),
+                              border: Border.all(color: Colors.grey.shade200),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Icon(Icons.task_alt, color: Colors.orange.shade600, size: 16),
-                    const SizedBox(width: 6),
-                    Text(
-                      '추천 작업',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.orange.shade600,
-                        fontWeight: FontWeight.w500,
+                                  Row(
+                    children: [
+                      Icon(Icons.task_alt, color: Colors.black, size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        '추천 작업',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _recommendation!.recommendedTask,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.orange.shade800,
-                    fontSize: 16,
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _recommendation!.recommendedTask,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                      fontSize: 16,
+                    ),
+                  ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.access_time, color: Colors.orange.shade600, size: 14),
-                    const SizedBox(width: 4),
-                    Text(
-                      '예상 시간: ${_recommendation!.estimatedTime}분',
-                      style: TextStyle(
-                        color: Colors.orange.shade700,
-                        fontSize: 12,
+                                  Row(
+                    children: [
+                      Icon(Icons.access_time, color: Colors.grey.shade600, size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        '예상 시간: ${_recommendation!.estimatedTime}분',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
-                    const Spacer(),
-                    Icon(Icons.verified, color: Colors.orange.shade600, size: 14),
-                    const SizedBox(width: 4),
-                    Text(
-                      '신뢰도: ${(_recommendation!.confidence * 100).toInt()}%',
-                      style: TextStyle(
-                        color: Colors.orange.shade700,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                      const Spacer(),
+                      Icon(Icons.verified, color: Colors.grey.shade600, size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        '신뢰도: ${(_recommendation!.confidence * 100).toInt()}%',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -569,7 +568,7 @@ class _LocalMLWidgetState extends State<LocalMLWidget> {
           Text(
             _recommendation!.reason,
             style: TextStyle(
-              color: Colors.orange.shade700,
+              color: Colors.grey.shade700,
               fontSize: 13,
               height: 1.3,
             ),
