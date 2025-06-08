@@ -311,12 +311,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         width: double.infinity,
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.grey.shade300, Colors.grey.shade400],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.grey.shade200,
+            width: 1,
           ),
-          borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -324,22 +324,22 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             Icon(
               Icons.cloud_off,
               size: 48,
-              color: Colors.white,
+              color: Colors.grey.shade600,
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Firebase 연결 없음',
               style: TextStyle(
-                color: Colors.white,
+                color: Colors.grey.shade700,
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               '할일을 완료하면 통계가 여기에 표시됩니다',
               style: TextStyle(
-                color: Colors.white70,
+                color: Colors.grey.shade600,
                 fontSize: 14,
               ),
               textAlign: TextAlign.center,
@@ -372,19 +372,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.purple.shade400, Colors.purple.shade600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
         ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.purple.withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,7 +385,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           const Text(
             '일간 요약',
             style: TextStyle(
-              color: Colors.white,
+              color: Colors.black,
               fontSize: 20,
               fontWeight: FontWeight.bold,
             ),
@@ -987,26 +980,19 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Row(
-          children: [
-            const Text(
-              '📊 활동 통계',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            if (_isOfflineMode) ...[
-              const SizedBox(width: 8),
-              Icon(
-                Icons.wifi_off,
-                size: 20,
-                color: Colors.orange.shade300,
-              ),
-            ],
-          ],
+        title: Text(
+          '통계',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+          ),
         ),
-        backgroundColor: Colors.purple.shade600,
-        foregroundColor: Colors.white,
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
         elevation: 0,
         actions: [
           if (_isOfflineMode)
@@ -1030,10 +1016,11 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         ],
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.black,
+          labelColor: Colors.black,
+          unselectedLabelColor: Colors.grey.shade600,
           isScrollable: false,
+          labelStyle: const TextStyle(fontWeight: FontWeight.w600),
           tabs: const [
             Tab(text: '일간'),
             Tab(text: '주간'),
@@ -1045,7 +1032,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.purple),
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
               ),
             )
           : TabBarView(
@@ -1065,15 +1052,17 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     return SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
           _buildDateSelector('일간'),
           const SizedBox(height: 16),
           _buildAchievementBadges(_dailyAchievements, '일간'),
           _buildDailySummaryCard(),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
+            // 시간별 활동
           _buildTimeTable(),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
+            // 카테고리별 시간
           _buildDailyCategoryChart(),
         ],
       ),
@@ -1174,13 +1163,10 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1189,7 +1175,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           IconButton(
             onPressed: () => _changePeriod(period, -1),
             icon: const Icon(Icons.chevron_left),
-            color: Colors.purple.shade600,
+            color: Colors.black,
             tooltip: _getPreviousTooltip(period),
           ),
           // 날짜 텍스트 + 오늘로 가기 버튼
@@ -1202,9 +1188,9 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
+                      color: Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.purple.shade200),
+                      border: Border.all(color: Colors.grey.shade300),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1212,15 +1198,15 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                         Icon(
                           Icons.calendar_today,
                           size: 16,
-                          color: Colors.purple.shade600,
+                          color: Colors.black,
                         ),
                         const SizedBox(width: 6),
                         Text(
                           _getDateRangeText(period),
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Colors.purple.shade600,
+                            color: Colors.black,
                           ),
                         ),
                       ],
@@ -1234,7 +1220,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.purple.shade100,
+                        color: Colors.grey.shade200,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
@@ -1243,15 +1229,15 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                           Icon(
                             Icons.today,
                             size: 14,
-                            color: Colors.purple.shade600,
+                            color: Colors.black,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             '오늘',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
-                              color: Colors.purple.shade600,
+                              color: Colors.black,
                             ),
                           ),
                         ],
@@ -1266,7 +1252,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           IconButton(
             onPressed: _canGoNext(period) ? () => _changePeriod(period, 1) : null,
             icon: const Icon(Icons.chevron_right),
-            color: _canGoNext(period) ? Colors.purple.shade600 : Colors.grey.shade300,
+            color: _canGoNext(period) ? Colors.black : Colors.grey.shade400,
             tooltip: _canGoNext(period) ? _getNextTooltip(period) : '미래 날짜는 선택할 수 없습니다',
           ),
         ],
@@ -1368,35 +1354,28 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     int totalTasks = _weeklyData.fold(0, (sum, stat) => sum + stat.totalTasks);
     double weeklyAvg = _weeklyData.isNotEmpty ? totalStudyTime / 7 : 0; // 주간 평균 (7일 기준)
 
-    return Container(
+        return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.purple.shade400, Colors.purple.shade600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
         ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.purple.withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
+        children: [
+          const Text(
             '주간 요약',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 20),
           Row(
             children: [
@@ -1453,19 +1432,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       width: double.infinity,
       padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.purple.shade400, Colors.purple.shade600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
         ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.purple.withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1473,10 +1445,10 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           const Text(
             '월간 요약',
             style: TextStyle(
-                    color: Colors.white,
+              color: Colors.black,
               fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 20),
           Row(
@@ -1529,12 +1501,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       children: [
         Row(
           children: [
-            Icon(icon, color: Colors.white70, size: 16),
+            Icon(icon, color: Colors.grey.shade600, size: 16),
             const SizedBox(width: 4),
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white70,
+              style: TextStyle(
+                color: Colors.grey.shade600,
                 fontSize: 14,
               ),
             ),
@@ -1544,7 +1516,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         Text(
           value,
           style: const TextStyle(
-            color: Colors.white,
+            color: Colors.black,
             fontSize: 24,
             fontWeight: FontWeight.bold,
           ),
@@ -1565,19 +1537,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.purple.shade400, Colors.purple.shade600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
         ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.purple.withOpacity(0.3),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1588,7 +1553,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               const Text(
                 '연간 요약',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Colors.black,
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1596,7 +1561,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Text(
                 '${_selectedYear.year}년',
                 style: TextStyle(
-                  color: Colors.white70,
+                  color: Colors.grey.shade600,
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
                 ),

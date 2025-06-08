@@ -301,7 +301,7 @@ class FirestoreTodoService {
   }
 
   // 카테고리 추가 (중복 체크 강화)
-  Future<String?> addCategory(String categoryName) async {
+  Future<String?> addCategory(String categoryName, {int? colorValue}) async {
     try {
       // 먼저 중복 체크
       final existingSnapshot = await _firestore!
@@ -319,6 +319,7 @@ class FirestoreTodoService {
         'name': categoryName,
         'userId': _userId,
         'createdAt': Timestamp.fromDate(DateTime.now()),
+        'color': colorValue ?? 0xFF607D8B, // 기본 색상: blueGrey.shade600
       });
       
       print('✅ 카테고리 추가 성공: $categoryName (ID: ${docRef.id})');
@@ -327,6 +328,126 @@ class FirestoreTodoService {
       print('❌ 카테고리 추가 실패: $e');
       return null;
     }
+  }
+
+  // 카테고리 색상 업데이트
+  Future<bool> updateCategoryColor(String categoryName, int colorValue) async {
+    try {
+      final snapshot = await _firestore!
+          .collection(_categoriesCollection)
+          .where('userId', isEqualTo: _userId)
+          .where('name', isEqualTo: categoryName)
+          .get();
+      
+      if (snapshot.docs.isEmpty) {
+        print('❌ 카테고리를 찾을 수 없음: $categoryName');
+        return false;
+      }
+      
+      await snapshot.docs.first.reference.update({
+        'color': colorValue,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      
+      print('✅ 카테고리 색상 업데이트 성공: $categoryName -> $colorValue');
+      return true;
+    } catch (e) {
+      print('❌ 카테고리 색상 업데이트 실패: $e');
+      return false;
+    }
+  }
+
+  // 카테고리 이름 업데이트
+  Future<bool> updateCategoryName(String oldCategoryName, String newCategoryName) async {
+    try {
+      // 새 이름이 이미 존재하는지 확인
+      final existingSnapshot = await _firestore!
+          .collection(_categoriesCollection)
+          .where('userId', isEqualTo: _userId)
+          .where('name', isEqualTo: newCategoryName)
+          .get();
+      
+      if (existingSnapshot.docs.isNotEmpty) {
+        print('❌ 새 카테고리 이름이 이미 존재함: $newCategoryName');
+        return false;
+      }
+      
+      // 기존 카테고리 찾기
+      final categorySnapshot = await _firestore!
+          .collection(_categoriesCollection)
+          .where('userId', isEqualTo: _userId)
+          .where('name', isEqualTo: oldCategoryName)
+          .get();
+      
+      if (categorySnapshot.docs.isEmpty) {
+        print('❌ 기존 카테고리를 찾을 수 없음: $oldCategoryName');
+        return false;
+      }
+      
+      // 배치 작업 시작
+      final batch = _firestore!.batch();
+      
+      // 1. 카테고리 컬렉션에서 이름 업데이트
+      final categoryDoc = categorySnapshot.docs.first;
+      batch.update(categoryDoc.reference, {
+        'name': newCategoryName,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      
+      // 2. 해당 카테고리를 사용하는 모든 할일의 카테고리 필드 업데이트
+      final todosSnapshot = await _firestore!
+          .collection(_collection)
+          .where('userId', isEqualTo: _userId)
+          .where('category', isEqualTo: oldCategoryName)
+          .get();
+      
+      for (var todoDoc in todosSnapshot.docs) {
+        batch.update(todoDoc.reference, {
+          'category': newCategoryName,
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
+      }
+      
+      // 배치 실행
+      await batch.commit();
+      
+      print('✅ 카테고리 이름 업데이트 성공: $oldCategoryName -> $newCategoryName (할일 ${todosSnapshot.docs.length}개 업데이트)');
+      return true;
+    } catch (e) {
+      print('❌ 카테고리 이름 업데이트 실패: $e');
+      return false;
+    }
+  }
+
+  // 카테고리와 색상 정보 함께 가져오기
+  Stream<Map<String, int>> getCategoryColorsStream() {
+    print('🔄 카테고리 색상 스트림 시작...');
+    
+    return _firestore!
+        .collection(_categoriesCollection)
+        .where('userId', isEqualTo: _userId)
+        .snapshots()
+        .handleError((error) {
+          print('❌ 카테고리 색상 스트림 오류: $error');
+          throw error;
+        })
+        .map((snapshot) {
+          final categoryColors = <String, int>{};
+          
+          for (var doc in snapshot.docs) {
+            try {
+              final data = doc.data();
+              final name = data['name'] as String;
+              final color = data['color'] as int? ?? 0xFF607D8B; // 기본 색상
+              categoryColors[name] = color;
+            } catch (e) {
+              print('❌ 카테고리 색상 문서 파싱 오류: $e');
+            }
+          }
+          
+          print('✅ 파싱된 카테고리 색상: $categoryColors');
+          return categoryColors;
+        });
   }
 
   // 카테고리 목록 가져오기
