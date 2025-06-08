@@ -255,11 +255,7 @@ class LocalMLService {
     // 미완료 작업 필터링
     final incompleteTodos = todos.where((todo) => !(todo['isCompleted'] ?? false)).toList();
     
-    // 건강 관리 추천 확인
-    final healthRecommendation = _getHealthRecommendation();
-    if (healthRecommendation != null) {
-      return healthRecommendation;
-    }
+    // 건강 관리 추천은 실제 할일에 집중하기 위해 제거
     
     if (incompleteTodos.isEmpty) {
       return {
@@ -368,12 +364,11 @@ class LocalMLService {
         confidence = 0.6;
         estimatedTime = (availableTimeMinutes * 0.5).round();
       } else {
-        return {
-          'recommendedTask': '휴식하기',
-          'estimatedTime': 15,
-          'reason': '늦은 시간입니다. 충분한 휴식을 취하세요.',
-          'confidence': 0.9
-        };
+        // 늦은 시간이지만 실제 할일이 있다면 가장 간단한 것 추천
+        selectedTask = _selectBestTask(incompleteTodos, availableTimeMinutes);
+        reason = "늦은 시간이지만 간단하게 처리할 수 있는 작업을 추천합니다.";
+        confidence = 0.5;
+        estimatedTime = (availableTimeMinutes * 0.3).round();
       }
     }
     
@@ -393,89 +388,7 @@ class LocalMLService {
     };
   }
 
-  // 건강 관리 추천
-  Map<String, dynamic>? _getHealthRecommendation() {
-    final now = DateTime.now();
-    final hour = now.hour;
-    final minute = now.minute;
-    
-    // 물 마시기 추천 (2시간마다)
-    if (minute >= 0 && minute <= 5) {
-      if (hour == 9 || hour == 11 || hour == 14 || hour == 16 || hour == 19) {
-        return {
-          'recommendedTask': '💧 물 마시기',
-          'estimatedTime': 2,
-          'reason': '수분 보충 시간입니다! 건강한 하루를 위해 물을 마셔보세요.',
-          'confidence': 0.95
-        };
-      }
-    }
-    
-    // 스트레칭 추천 (오후 3시, 저녁 8시)
-    if (minute >= 0 && minute <= 10) {
-      if (hour == 15) {
-        return {
-          'recommendedTask': '🤸‍♀️ 간단한 스트레칭',
-          'estimatedTime': 5,
-          'reason': '오후 피로를 풀어주는 스트레칭 시간입니다!',
-          'confidence': 0.9
-        };
-      } else if (hour == 20) {
-        return {
-          'recommendedTask': '🧘‍♀️ 목과 어깨 스트레칭',
-          'estimatedTime': 5,
-          'reason': '하루 종일 쌓인 피로를 풀어주는 스트레칭을 해보세요.',
-          'confidence': 0.9
-        };
-      }
-    }
-    
-    // 눈 휴식 추천 (1시간마다)
-    if (minute >= 30 && minute <= 35) {
-      if (hour >= 9 && hour <= 21) {
-        return {
-          'recommendedTask': '👀 눈 휴식하기',
-          'estimatedTime': 3,
-          'reason': '20-20-20 법칙: 20초간 20피트(6m) 떨어진 곳을 바라보세요.',
-          'confidence': 0.85
-        };
-      }
-    }
-    
-    // 심호흡 추천 (스트레스 해소)
-    if (minute >= 45 && minute <= 50) {
-      if (hour == 12 || hour == 18) {
-        return {
-          'recommendedTask': '🌬️ 심호흡하기',
-          'estimatedTime': 3,
-          'reason': '깊은 심호흡으로 마음을 진정시키고 에너지를 충전하세요.',
-          'confidence': 0.8
-        };
-      }
-    }
-    
-    // 점심시간 추천
-    if (hour == 12 && minute >= 0 && minute <= 30) {
-      return {
-        'recommendedTask': '🍽️ 점심 식사',
-        'estimatedTime': 30,
-        'reason': '점심시간입니다! 영양가 있는 식사로 에너지를 보충하세요.',
-        'confidence': 0.95
-      };
-    }
-    
-    // 저녁 식사 추천
-    if (hour == 18 && minute >= 0 && minute <= 30) {
-      return {
-        'recommendedTask': '🍽️ 저녁 식사',
-        'estimatedTime': 30,
-        'reason': '저녁 식사 시간입니다! 하루를 마무리하는 건강한 식사를 하세요.',
-        'confidence': 0.95
-      };
-    }
-    
-    return null; // 건강 추천이 없을 때
-  }
+
 
   // 시간대 분류
   String _getTimeCategory(int hour) {
