@@ -1188,7 +1188,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                 GestureDetector(
                   onTap: () => _showDatePicker(period),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     decoration: BoxDecoration(
                       color: Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(8),
@@ -1199,14 +1199,14 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                       children: [
                         Icon(
                           Icons.calendar_today,
-                          size: 16,
+                          size: 12,
                           color: Colors.black,
                         ),
                         const SizedBox(width: 6),
                         Text(
                           _getDateRangeText(period),
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 14,
                             fontWeight: FontWeight.bold,
                             color: Colors.black,
                           ),
@@ -1230,14 +1230,14 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                         children: [
                           Icon(
                             Icons.today,
-                            size: 14,
+                            size: 10,
                             color: Colors.black,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             '오늘',
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: 8,
                               fontWeight: FontWeight.w500,
                               color: Colors.black,
                             ),
