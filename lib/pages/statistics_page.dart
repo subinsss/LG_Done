@@ -952,7 +952,6 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           labelColor: Colors.black,
           unselectedLabelColor: Colors.grey.shade600,
           isScrollable: false,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w600),
           tabs: const [
             Tab(text: '일간'),
             Tab(text: '주간'),
@@ -984,17 +983,15 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     return SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
           _buildDateSelector('일간'),
           const SizedBox(height: 16),
           _buildAchievementBadges(_dailyAchievements, '일간'),
           _buildDailySummaryCard(),
-            const SizedBox(height: 24),
-            // 시간별 활동
+            const SizedBox(height: 20),
           _buildTimeTable(),
-            const SizedBox(height: 24),
-            // 카테고리별 시간
+            const SizedBox(height: 20),
           _buildDailyCategoryChart(),
         ],
       ),
@@ -1095,10 +1092,13 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1135,7 +1135,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                         const SizedBox(width: 6),
                         Text(
                           _getDateRangeText(period),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: Colors.black,
@@ -1166,7 +1166,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                           const SizedBox(width: 4),
                           Text(
                             '오늘',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                               color: Colors.black,
@@ -1286,7 +1286,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     int totalTasks = _weeklyData.fold(0, (sum, stat) => sum + stat.totalTasks);
     double weeklyAvg = _weeklyData.isNotEmpty ? totalStudyTime / 7 : 0; // 주간 평균 (7일 기준)
 
-        return Container(
+    return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -1299,15 +1299,15 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
+            children: [
+              const Text(
             '주간 요약',
-            style: TextStyle(
-              color: Colors.black,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+                style: TextStyle(
+				  color: Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
           const SizedBox(height: 20),
           Row(
             children: [

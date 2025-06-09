@@ -41,7 +41,7 @@ class _LoginPageState extends State<LoginPage> {
               children: [
                 const Spacer(),
                 Image.asset(
-                  'assets/ThinQ_logo.png',
+                  'assets/done_logo.png',
                   width: 200,
                 ),
                 Container(height: 70),

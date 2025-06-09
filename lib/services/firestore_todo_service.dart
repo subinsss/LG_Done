@@ -10,6 +10,12 @@ class TodoItem {
   final String userId;
   final String category;
   final int order; // 순서 필드 추가
+  
+  // 시간 관련 필드들 추가
+  final String? startTime;
+  final String? stopTime;
+  final List<String>? pauseTimes;
+  final List<String>? resumeTimes;
 
   TodoItem({
     required this.id,
@@ -20,6 +26,10 @@ class TodoItem {
     required this.userId,
     required this.category,
     this.order = 0, // 기본값 0
+    this.startTime,
+    this.stopTime,
+    this.pauseTimes,
+    this.resumeTimes,
   });
 
   factory TodoItem.fromFirestore(DocumentSnapshot doc) {
@@ -52,6 +62,76 @@ class TodoItem {
     // 기존 isCompleted와 새로운 is_completed 모두 지원
     bool completed = data['is_completed'] ?? data['isCompleted'] ?? false;
     
+    // 시간 필드들 읽기
+    List<String>? pauseTimes;
+    List<String>? resumeTimes;
+    
+    // 시간 데이터 파싱 (핵심 로그만)
+    if (data['pause_times'] != null) {
+      try {
+        if (data['pause_times'] is List) {
+          pauseTimes = List<String>.from(data['pause_times']);
+        } else if (data['pause_times'] is String) {
+          String pauseStr = data['pause_times'];
+          
+          if (pauseStr.startsWith('[') && pauseStr.endsWith(']')) {
+            try {
+              String cleanStr = pauseStr.substring(1, pauseStr.length - 1).trim();
+              
+              if (cleanStr.isEmpty) {
+                pauseTimes = [];
+              } else {
+                pauseTimes = cleanStr
+                    .split(',')
+                    .map((s) => s.trim().replaceAll("'", "").replaceAll('"', ''))
+                    .where((s) => s.isNotEmpty)
+                    .toList();
+              }
+            } catch (e) {
+              pauseTimes = null;
+            }
+          } else {
+            pauseTimes = [pauseStr];
+          }
+        }
+      } catch (e) {
+        pauseTimes = null;
+      }
+    }
+    
+    if (data['resume_times'] != null) {
+      try {
+        if (data['resume_times'] is List) {
+          resumeTimes = List<String>.from(data['resume_times']);
+        } else if (data['resume_times'] is String) {
+          String resumeStr = data['resume_times'];
+          
+          if (resumeStr.startsWith('[') && resumeStr.endsWith(']')) {
+            try {
+              String cleanStr = resumeStr.substring(1, resumeStr.length - 1).trim();
+              
+              if (cleanStr.isEmpty) {
+                resumeTimes = [];
+                print('📊 ${data['title']}: resume_times 빈 배열');
+              } else {
+                resumeTimes = cleanStr
+                    .split(',')
+                    .map((s) => s.trim().replaceAll("'", "").replaceAll('"', ''))
+                    .where((s) => s.isNotEmpty)
+                    .toList();
+              }
+            } catch (e) {
+              resumeTimes = null;
+            }
+          } else {
+            resumeTimes = [resumeStr];
+          }
+        }
+      } catch (e) {
+        resumeTimes = null;
+      }
+    }
+    
     return TodoItem(
       id: doc.id,
       title: data['title'] ?? '',
@@ -61,6 +141,10 @@ class TodoItem {
       userId: data['userId'] ?? 'anonymous',
       category: data['category'] ?? '',
       order: data['order'] ?? 0,
+      startTime: data['start_time'],
+      stopTime: data['stop_time'],
+      pauseTimes: pauseTimes,
+      resumeTimes: resumeTimes,
     );
   }
 
@@ -143,43 +227,52 @@ class FirestoreTodoService {
     }
   }
 
-  // 할일 목록 실시간 스트림
+  // 할일 목록 실시간 스트림 (오늘 날짜 기준)
   Stream<List<TodoItem>> getTodosStream() {
     print('🔄 Firestore 스트림 시작...');
+    
+    // 오늘 날짜 계산
+    final today = DateTime.now();
+    final todayString = DateFormat('yyyy-MM-dd').format(DateTime(today.year, today.month, today.day));
+    
+    print('📅 오늘 날짜 필터: $todayString');
     
     return _firestore!
         .collection(_collection)
         .where('userId', isEqualTo: _userId)
-        .snapshots()
+        .where('due_date_string', isEqualTo: todayString) // 오늘 날짜만 가져오기
+        .snapshots(includeMetadataChanges: true)
         .handleError((error) {
           print('❌ Firestore 스트림 오류: $error');
           print('❌ 오류 타입: ${error.runtimeType}');
+          print('❌ 상세 정보: ${error.toString()}');
+          
           if (error.toString().contains('indexes')) {
             print('💡 해결방법: Firebase Console에서 복합 인덱스를 생성해야 합니다.');
+          } else if (error.toString().contains('permission')) {
+            print('💡 해결방법: Firestore 보안 규칙을 확인해주세요.');
+          } else if (error.toString().contains('network') || error.toString().contains('connection')) {
+            print('💡 해결방법: 네트워크 연결을 확인해주세요.');
           }
+          
           throw error;
         })
         .map((snapshot) {
-      print('📊 전체 문서 개수: ${snapshot.docs.length}');
+      print('📊 오늘 할일 개수: ${snapshot.docs.length}');
+      print('📊 메타데이터 - hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
+      print('📊 메타데이터 - isFromCache: ${snapshot.metadata.isFromCache}');
       
       final todos = snapshot.docs.map((doc) {
         try {
-          print('📄 문서 데이터: ${doc.data()}');
           return TodoItem.fromFirestore(doc);
         } catch (e) {
           print('❌ 문서 파싱 오류: $e');
           print('❌ 문서 ID: ${doc.id}');
-          print('❌ 문서 데이터: ${doc.data()}');
           rethrow;
         }
       }).toList();
       
-      print('✅ 필터링된 할일 개수: ${todos.length}');
-      print('📦 Firestore에서 받은 할일 개수: ${todos.length}');
-      
-      for (var todo in todos) {
-        print('📝 할일: ${todo.title} (완료: ${todo.isCompleted})');
-      }
+      print('✅ 오늘 할일 처리 완료: ${todos.length}개');
       
       return todos;
     });

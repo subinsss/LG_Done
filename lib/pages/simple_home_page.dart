@@ -39,7 +39,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   
   // 달력 관련 추가
   DateTime _focusedDay = DateTime.now();
-  DateTime _selectedDay = DateTime.now();
+  DateTime _selectedDay = DateTime.now(); // 오늘 날짜로 고정
   bool _isCalendarExpanded = false;
 
   // 할일 추가 컨트롤러
@@ -136,13 +136,68 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     });
 
     try {
+      // Firebase 연결 상태 확인 및 재시도
+      print('🔥 Firebase 연결 상태 확인 중...');
+      final db = FirebaseFirestore.instance;
+      
+      int retryCount = 0;
+      bool connectionSuccessful = false;
+      
+      while (!connectionSuccessful && retryCount < 3) {
+        try {
+          retryCount++;
+          print('🔄 Firebase 연결 시도 ${retryCount}/3');
+          
+          final testQuery = await db.collection('todos').limit(1).get(
+            const GetOptions(source: Source.server)
+          );
+          
+          print('✅ Firebase 연결 성공 - 문서 개수: ${testQuery.docs.length}');
+          connectionSuccessful = true;
+          
+        } catch (e) {
+          print('❌ Firebase 연결 실패 (${retryCount}/3): $e');
+          if (retryCount < 3) {
+            print('⏳ 2초 후 재시도...');
+            await Future.delayed(const Duration(seconds: 2));
+          }
+        }
+      }
+      
+      if (!connectionSuccessful) {
+        print('💥 Firebase 연결 최종 실패 - 오프라인 모드로 진행');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('서버 연결에 실패했습니다. 오프라인 데이터를 사용합니다.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+      
+      // 스트림 연결 시작
+      print('📡 실시간 스트림 연결 시작...');
       _listenToTodos();
       _listenToCategories();
       _listenToCategoryColors();
       _listenToSelectedCharacter();
       _listenToProfile();
+      
+      print('✅ 모든 스트림 연결 완료');
+      
     } catch (e) {
       print('❌ 데이터 초기화 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('데이터 초기화 중 오류가 발생했습니다: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     } finally {
       setState(() {
         _isDataLoading = false;
@@ -525,16 +580,37 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
 
   // Firestore에서 할일 목록 실시간 구독
   void _listenToTodos() {
+    print('🔄 Firebase 연결 중...');
+    
+    _todosSubscription?.cancel();
+    
     _todosSubscription = _firestoreService.getTodosStream().listen(
       (todos) {
+        print('✅ 데이터 수신: ${todos.length}개 할일');
+        
         setState(() {
           _todos = todos;
         });
       },
       onError: (error) {
-        print('❌ 할일 목록 구독 오류: $error');
+        print('❌ 연결 오류: $error');
+        
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            _listenToTodos();
+          }
+        });
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('할일 목록을 불러오는데 실패했습니다: $error')),
+          SnackBar(
+            content: Text('연결 오류 발생. 재연결 중...'),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: '재연결',
+              textColor: Colors.white,
+              onPressed: () => _listenToTodos(),
+            ),
+          ),
         );
       },
     );
@@ -978,12 +1054,9 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   }
 
   Widget _buildTodoList() {
-    // 선택한 날짜의 할일만 필터링
-    final selectedDateTodos = _todos.where((todo) {
-      if (todo.dueDate == null) return false;
-      return isSameDay(todo.dueDate!, _selectedDay);
-    }).toList();
-
+    // Firebase에서 이미 오늘 날짜로 필터링된 할일들
+    final todayTodos = _todos;
+    
     // 카테고리가 없으면 안내 메시지 표시
     if (_categories.isEmpty) {
       return Container(
@@ -991,10 +1064,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-              color: Colors.grey.shade200,
-              width: 1,
-            ),
+          border: Border.all(
+            color: Colors.grey.shade200,
+            width: 1,
+          ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1042,10 +1115,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       );
     }
 
-    // 모든 카테고리를 표시하되, 각 카테고리별로 선택한 날짜의 할일만 필터링
+    // 카테고리별로 오늘 할일을 그룹화하여 표시
     return Column(
       children: _categories.map((category) {
-        final categoryTodos = selectedDateTodos
+        final categoryTodos = todayTodos
             .where((todo) => todo.category == category)
             .toList();
         
@@ -1131,7 +1204,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   padding: const EdgeInsets.all(20),
                   child: Center(
                     child: Text(
-                      '${DateFormat('M월 d일').format(_selectedDay)}에 이 카테고리의 할일이 없습니다',
+                      '오늘 이 카테고리의 할일이 없습니다',
                       style: TextStyle(
                         color: Colors.grey.shade400,
                         fontSize: 14,
@@ -1296,24 +1369,61 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   softWrap: true, // 자동 줄바꿈
                 ),
                 const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: _getPriorityColor(todo.priority).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _getPriorityText(todo.priority),
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: _getPriorityColor(todo.priority),
-                        fontWeight: FontWeight.w500,
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _getPriorityColor(todo.priority).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _getPriorityText(todo.priority),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: _getPriorityColor(todo.priority),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  ),
+                    // 완료된 할일에 시간 정보 표시
+                    if (todo.isCompleted && _hasTimeData(todo)) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.shade200, width: 0.5),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.access_time,
+                              size: 10,
+                              color: Colors.green.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _calculateWorkingTime(todo),
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+                // 완료된 할일에 상세 시간 타임라인 표시 (할일 카드 내부)
+                if (todo.isCompleted && _hasTimeData(todo)) ...[
+                  const SizedBox(height: 8),
+                  _buildTimeVisualization(todo),
+                ],
               ],
             ),
           ),
@@ -1371,6 +1481,12 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     // 기본 색상 (블루그레이) - Firestore의 기본값과 일치
     return Colors.blueGrey.shade600;
   }
+
+
+
+
+
+
 
   void _showAddTodoDialogForCategory(String category) {
     _selectedCategory = category;
@@ -1674,6 +1790,51 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         elevation: 0,
         centerTitle: true,
         actions: [
+          // 새로고침 버튼 추가
+          IconButton(
+            onPressed: () async {
+              print('🔄 수동 새로고침 시작 - 모든 스트림 재연결');
+              
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('모든 데이터를 새로고침하고 있습니다...'),
+                  duration: Duration(seconds: 2),
+                  backgroundColor: Colors.blue,
+                ),
+              );
+              
+              // 모든 스트림 재연결
+              _todosSubscription?.cancel();
+              _categoriesSubscription?.cancel();
+              _categoryColorsSubscription?.cancel();
+              _selectedCharacterSubscription?.cancel();
+              _profileSubscription?.cancel();
+              
+              // 약간의 지연 후 재연결
+              await Future.delayed(const Duration(milliseconds: 500));
+              
+              if (mounted) {
+                _listenToTodos();
+                _listenToCategories();
+                _listenToCategoryColors();
+                _listenToSelectedCharacter();
+                _listenToProfile();
+                
+                print('✅ 모든 스트림 재연결 완료');
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('새로고침 완료!'),
+                    duration: Duration(seconds: 1),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.refresh),
+            color: Colors.black,
+            tooltip: '새로고침',
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: _buildProfileIcon(),
@@ -1762,10 +1923,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '${_todos.where((todo) {
-                            if (todo.dueDate == null) return false;
-                            return isSameDay(todo.dueDate!, _selectedDay);
-                          }).length}개의 할일',
+                          '${_todos.length}개의 오늘 할일',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -2616,6 +2774,290 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     if (result == true) {
       print('🔄 캐릭터 변경됨! 실시간 업데이트될 예정...');
       // 실시간 스트림이 자동으로 업데이트하므로 별도 로딩 불필요
+    }
+  }
+
+  // 시간 데이터가 있는지 확인
+  bool _hasTimeData(TodoItem todo) {
+    return todo.startTime != null || 
+           todo.stopTime != null ||
+           (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty) ||
+           (todo.resumeTimes != null && todo.resumeTimes!.isNotEmpty);
+  }
+
+  // 총 작업 시간 계산
+  String _calculateWorkingTime(TodoItem todo) {
+    try {
+      if (!_hasTimeData(todo)) return '0분';
+
+      DateTime? startTime;
+      DateTime? endTime;
+      
+      if (todo.startTime != null) {
+        startTime = _parseTime(todo.startTime!);
+      }
+
+      // 종료 시간 결정
+      bool hasValidResumeData = todo.resumeTimes != null && 
+                                todo.resumeTimes!.isNotEmpty && 
+                                todo.resumeTimes!.length > 0;
+      
+      if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && hasValidResumeData) {
+        int pauseCount = todo.pauseTimes!.length;
+        int resumeCount = todo.resumeTimes!.length;
+        
+        if (pauseCount != resumeCount) {
+          endTime = _parseTime(todo.pauseTimes!.last);
+        } else {
+          if (todo.stopTime != null) {
+            endTime = _parseTime(todo.stopTime!);
+          }
+        }
+      } else if (todo.stopTime != null) {
+        endTime = _parseTime(todo.stopTime!);
+      }
+
+      if (startTime == null || endTime == null) return '0분';
+
+      int totalMinutes = endTime.difference(startTime).inMinutes;
+      int pausedMinutes = _calculatePausedTime(todo);
+      
+      int workingMinutes = totalMinutes - pausedMinutes;
+      workingMinutes = workingMinutes < 0 ? 0 : workingMinutes;
+      
+      if (workingMinutes < 60) {
+        return '${workingMinutes}분';
+      } else {
+        int hours = workingMinutes ~/ 60;
+        int minutes = workingMinutes % 60;
+        return '${hours}시간 ${minutes}분';
+      }
+    } catch (e) {
+      return '0분';
+    }
+  }
+
+  // 일시정지 시간 계산
+  int _calculatePausedTime(TodoItem todo) {
+    if (todo.pauseTimes == null || todo.pauseTimes!.isEmpty) return 0;
+    
+    bool hasValidResumeData = todo.resumeTimes != null && 
+                              todo.resumeTimes!.isNotEmpty && 
+                              todo.resumeTimes!.length > 0;
+    
+    if (!hasValidResumeData) {
+      return 0;
+    }
+    
+    int pausedMinutes = 0;
+    int pauseCount = todo.pauseTimes!.length;
+    int resumeCount = todo.resumeTimes!.length;
+    int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
+    
+    for (int i = 0; i < pairCount; i++) {
+      try {
+        DateTime pauseTime = _parseTime(todo.pauseTimes![i]);
+        DateTime resumeTime = _parseTime(todo.resumeTimes![i]);
+        int restMinutes = resumeTime.difference(pauseTime).inMinutes;
+        if (restMinutes > 0) {
+          pausedMinutes += restMinutes;
+        }
+      } catch (e) {
+        // 무시
+      }
+    }
+    
+    return pausedMinutes;
+  }
+
+  // 시간 문자열 파싱
+  DateTime _parseTime(String timeString) {
+    final today = DateTime.now();
+    final parts = timeString.split(':');
+    return DateTime(
+      today.year, 
+      today.month, 
+      today.day,
+      int.parse(parts[0]),
+      int.parse(parts[1]),
+      parts.length > 2 ? int.parse(parts[2]) : 0,
+    );
+  }
+
+  // 시간 시각화 위젯
+  Widget _buildTimeVisualization(TodoItem todo) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.schedule, size: 12, color: Colors.grey.shade600),
+              const SizedBox(width: 4),
+              Text(
+                '작업 타임라인',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildTimeline(todo),
+        ],
+      ),
+    );
+  }
+
+  // 타임라인 구성
+  Widget _buildTimeline(TodoItem todo) {
+    List<Widget> timelineItems = [];
+    
+    // 1. 시작 시간
+    if (todo.startTime != null) {
+      timelineItems.add(_buildTimelineItem(
+        '시작', 
+        todo.startTime!, 
+        Colors.green,
+        Icons.play_arrow,
+      ));
+    }
+
+    // 2. 쉬는 시간 처리
+    bool hasValidResumeData = todo.resumeTimes != null && 
+                              todo.resumeTimes!.isNotEmpty && 
+                              todo.resumeTimes!.length > 0;
+    
+    if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && hasValidResumeData) {
+      int pauseCount = todo.pauseTimes!.length;
+      int resumeCount = todo.resumeTimes!.length;
+      int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
+      
+      for (int i = 0; i < pairCount; i++) {
+        String pauseTime = todo.pauseTimes![i];
+        String resumeTime = todo.resumeTimes![i];
+        timelineItems.add(_buildRestTimeItem(pauseTime, resumeTime));
+      }
+    }
+
+    // 3. 완료 시간 결정
+    String? endTime;
+    String endLabel = '완료';
+    
+    if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && hasValidResumeData) {
+      int pauseCount = todo.pauseTimes!.length;
+      int resumeCount = todo.resumeTimes!.length;
+      
+      if (pauseCount != resumeCount) {
+        endTime = todo.pauseTimes!.last;
+        endLabel = '완료';
+      } else {
+        if (todo.stopTime != null) {
+          endTime = todo.stopTime!;
+          endLabel = '완료';
+        }
+      }
+    } else if (todo.stopTime != null) {
+      endTime = todo.stopTime!;
+      endLabel = '완료';
+    }
+
+    if (endTime != null) {
+      timelineItems.add(_buildTimelineItem(
+        endLabel, 
+        endTime, 
+        Colors.red,
+        Icons.stop,
+      ));
+    }
+
+    return Column(children: timelineItems);
+  }
+
+  // 타임라인 아이템
+  Widget _buildTimelineItem(String label, String time, Color color, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: color, width: 1),
+            ),
+            child: Icon(icon, size: 10, color: color),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$label: $time',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 쉬는 시간 아이템
+  Widget _buildRestTimeItem(String startTime, String endTime) {
+    String duration = _calculateRestDuration(startTime, endTime);
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange, width: 1),
+            ),
+            child: Icon(Icons.coffee, size: 10, color: Colors.orange),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '쉬는 시간: $startTime ~ $endTime ($duration)',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 쉬는 시간 계산
+  String _calculateRestDuration(String startTime, String endTime) {
+    try {
+      DateTime start = _parseTime(startTime);
+      DateTime end = _parseTime(endTime);
+      int minutes = end.difference(start).inMinutes;
+      
+      if (minutes < 60) {
+        return '${minutes}분';
+      } else {
+        int hours = minutes ~/ 60;
+        int remainingMinutes = minutes % 60;
+        return '${hours}시간 ${remainingMinutes}분';
+      }
+    } catch (e) {
+      return '?분';
     }
   }
 } 
