@@ -79,23 +79,47 @@ class TodoItem {
 
 class FirestoreTodoService {
   static final FirestoreTodoService _instance = FirestoreTodoService._internal();
-  factory FirestoreTodoService() => _instance;
-  
-  FirebaseFirestore? _firestore;
+  FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final String _collection = 'todos';
   final String _categoriesCollection = 'categories';  // 카테고리 컬렉션 이름
   final String _userId = 'anonymous'; // 로그인 없이 사용
 
   FirestoreTodoService._internal();
+  factory FirestoreTodoService() => _instance;
 
-  // Firebase 초기화 메서드
-  void initialize(FirebaseFirestore firestoreInstance) {
-    _firestore = firestoreInstance;
+  // Firestore 인스턴스 초기화
+  void initialize(FirebaseFirestore firestore) {
+    _firestore = firestore;
   }
 
-  // Firebase 사용 가능 여부 확인
-  Future<bool> _isFirebaseAvailable() async {
-    return _firestore != null;
+  // 할일 스트림 가져오기
+  Stream<List<TodoItem>> getTodoStream() {
+    return _firestore
+        .collection(_collection)
+        .orderBy('completedAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        return TodoItem.fromFirestore(doc);
+      }).toList();
+    });
+  }
+
+  // 카테고리 색상 스트림 가져오기
+  Stream<Map<String, int>> getCategoryColorsStream() {
+    return _firestore
+        .collection('categories')
+        .snapshots()
+        .map((snapshot) {
+      Map<String, int> colors = {};
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        if (data['color'] != null) {
+          colors[doc.id] = data['color'] as int;
+        }
+      }
+      return colors;
+    });
   }
 
   // 할일 추가 - Firestore에 직접 저장
@@ -114,7 +138,7 @@ class FirestoreTodoService {
       }
       
       // 해당 카테고리와 날짜의 기존 할일 개수를 조회하여 순서 설정
-      final existingTodos = await _firestore!
+      final existingTodos = await _firestore
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .where('category', isEqualTo: category)
@@ -123,7 +147,7 @@ class FirestoreTodoService {
       
       final newOrder = existingTodos.docs.length;
       
-      final docRef = await _firestore!.collection(_collection).add({
+      final docRef = await _firestore.collection(_collection).add({
         'title': title,
         'is_completed': false,
         'priority': priority,
@@ -147,7 +171,7 @@ class FirestoreTodoService {
   Stream<List<TodoItem>> getTodosStream() {
     print('🔄 Firestore 스트림 시작...');
     
-    return _firestore!
+    return _firestore
         .collection(_collection)
         .where('userId', isEqualTo: _userId)
         .snapshots()
@@ -188,7 +212,7 @@ class FirestoreTodoService {
   // 할일 완료 상태 토글 - Firestore에 직접 업데이트
   Future<bool> toggleTodoCompletion(String todoId, bool isCompleted) async {
     try {
-      await _firestore!.collection(_collection).doc(todoId).update({
+      await _firestore.collection(_collection).doc(todoId).update({
         'is_completed': isCompleted,
       });
       
@@ -203,7 +227,7 @@ class FirestoreTodoService {
   // 할일 삭제 - Firestore에서 직접 삭제
   Future<bool> deleteTodo(String todoId) async {
     try {
-      await _firestore!.collection(_collection).doc(todoId).delete();
+      await _firestore.collection(_collection).doc(todoId).delete();
       print('✅ Firestore에서 할일 삭제 성공: $todoId');
       return true;
     } catch (e) {
@@ -218,7 +242,7 @@ class FirestoreTodoService {
       final dateString = DateFormat('yyyy-MM-dd').format(date);
       
       // 해당 카테고리와 날짜의 모든 할일 가져오기
-      final snapshot = await _firestore!
+      final snapshot = await _firestore
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .where('category', isEqualTo: category)
@@ -239,7 +263,7 @@ class FirestoreTodoService {
       }
       
       // 배치로 업데이트
-      final batch = _firestore!.batch();
+      final batch = _firestore.batch();
       
       // 순서 재배열
       if (oldIndex < newIndex) {
@@ -280,7 +304,8 @@ class FirestoreTodoService {
   // 완료된 할일 목록
   Future<List<TodoItem>> getCompletedTodos() async {
     try {
-      final snapshot = await _firestore!.collection(_collection)
+      final snapshot = await _firestore
+          .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .where('is_completed', isEqualTo: true)
           .get();
@@ -295,7 +320,7 @@ class FirestoreTodoService {
   // 미완료 할일 목록
   Future<List<TodoItem>> getIncompleteTodos() async {
     try {
-      final snapshot = await _firestore!
+      final snapshot = await _firestore
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .where('is_completed', isEqualTo: false)
@@ -311,7 +336,7 @@ class FirestoreTodoService {
   // 할일 통계
   Future<Map<String, int>> getTodoStats() async {
     try {
-      final snapshot = await _firestore!
+      final snapshot = await _firestore
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .get();
@@ -338,7 +363,7 @@ class FirestoreTodoService {
   Future<void> syncServerData() async {
     try {
       print('🔄 서버 데이터 동기화 시작...');
-      final snapshot = await _firestore!
+      final snapshot = await _firestore
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .get();
@@ -354,7 +379,7 @@ class FirestoreTodoService {
     try {
       print('🔄 기존 데이터 마이그레이션 시작...');
       
-      final snapshot = await _firestore!
+      final snapshot = await _firestore
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .get();
@@ -369,7 +394,7 @@ class FirestoreTodoService {
             data['category'] == null || 
             data['category'] == '' || 
             data['category'] == '기본') {
-          await _firestore!.collection(_collection).doc(doc.id).delete();
+          await _firestore.collection(_collection).doc(doc.id).delete();
           deletedCount++;
           print('🗑️ 카테고리 없는 할일 삭제: ${doc.id}');
         }
@@ -385,7 +410,7 @@ class FirestoreTodoService {
   Future<String?> addCategory(String categoryName, {int? colorValue}) async {
     try {
       // 먼저 중복 체크
-      final existingSnapshot = await _firestore!
+      final existingSnapshot = await _firestore
           .collection(_categoriesCollection)
           .where('userId', isEqualTo: _userId)
           .where('name', isEqualTo: categoryName)
@@ -396,7 +421,7 @@ class FirestoreTodoService {
         return existingSnapshot.docs.first.id;
       }
       
-      final docRef = await _firestore!.collection(_categoriesCollection).add({
+      final docRef = await _firestore.collection(_categoriesCollection).add({
         'name': categoryName,
         'userId': _userId,
         'createdAt': Timestamp.fromDate(DateTime.now()),
@@ -414,7 +439,7 @@ class FirestoreTodoService {
   // 카테고리 색상 업데이트
   Future<bool> updateCategoryColor(String categoryName, int colorValue) async {
     try {
-      final snapshot = await _firestore!
+      final snapshot = await _firestore
           .collection(_categoriesCollection)
           .where('userId', isEqualTo: _userId)
           .where('name', isEqualTo: categoryName)
@@ -442,7 +467,7 @@ class FirestoreTodoService {
   Future<bool> updateCategoryName(String oldCategoryName, String newCategoryName) async {
     try {
       // 새 이름이 이미 존재하는지 확인
-      final existingSnapshot = await _firestore!
+      final existingSnapshot = await _firestore
           .collection(_categoriesCollection)
           .where('userId', isEqualTo: _userId)
           .where('name', isEqualTo: newCategoryName)
@@ -454,7 +479,7 @@ class FirestoreTodoService {
       }
       
       // 기존 카테고리 찾기
-      final categorySnapshot = await _firestore!
+      final categorySnapshot = await _firestore
           .collection(_categoriesCollection)
           .where('userId', isEqualTo: _userId)
           .where('name', isEqualTo: oldCategoryName)
@@ -466,7 +491,7 @@ class FirestoreTodoService {
       }
       
       // 배치 작업 시작
-      final batch = _firestore!.batch();
+      final batch = _firestore.batch();
       
       // 1. 카테고리 컬렉션에서 이름 업데이트
       final categoryDoc = categorySnapshot.docs.first;
@@ -476,7 +501,7 @@ class FirestoreTodoService {
       });
       
       // 2. 해당 카테고리를 사용하는 모든 할일의 카테고리 필드 업데이트
-      final todosSnapshot = await _firestore!
+      final todosSnapshot = await _firestore
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .where('category', isEqualTo: oldCategoryName)
@@ -500,42 +525,11 @@ class FirestoreTodoService {
     }
   }
 
-  // 카테고리와 색상 정보 함께 가져오기
-  Stream<Map<String, int>> getCategoryColorsStream() {
-    print('🔄 카테고리 색상 스트림 시작...');
-    
-    return _firestore!
-        .collection(_categoriesCollection)
-        .where('userId', isEqualTo: _userId)
-        .snapshots()
-        .handleError((error) {
-          print('❌ 카테고리 색상 스트림 오류: $error');
-          throw error;
-        })
-        .map((snapshot) {
-          final categoryColors = <String, int>{};
-          
-          for (var doc in snapshot.docs) {
-            try {
-              final data = doc.data();
-              final name = data['name'] as String;
-              final color = data['color'] as int? ?? 0xFF607D8B; // 기본 색상
-              categoryColors[name] = color;
-            } catch (e) {
-              print('❌ 카테고리 색상 문서 파싱 오류: $e');
-            }
-          }
-          
-          print('✅ 파싱된 카테고리 색상: $categoryColors');
-          return categoryColors;
-        });
-  }
-
   // 카테고리 목록 가져오기
   Stream<List<String>> getCategoriesStream() {
     print('🔄 카테고리 스트림 시작...');
     
-    return _firestore!
+    return _firestore
         .collection(_categoriesCollection)
         .where('userId', isEqualTo: _userId)
         .snapshots()
@@ -576,7 +570,7 @@ class FirestoreTodoService {
   Future<bool> deleteCategory(String categoryName) async {
     try {
       // 해당 카테고리의 모든 할일 삭제
-      final todosWithCategory = await _firestore!
+      final todosWithCategory = await _firestore
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .where('category', isEqualTo: categoryName)
@@ -589,7 +583,7 @@ class FirestoreTodoService {
       }
       
       // categories 컬렉션에서 카테고리 삭제
-      final categorySnapshot = await _firestore!
+      final categorySnapshot = await _firestore
           .collection(_categoriesCollection)
           .where('userId', isEqualTo: _userId)
           .where('name', isEqualTo: categoryName)
@@ -612,7 +606,7 @@ class FirestoreTodoService {
   // 할일의 카테고리 업데이트
   Future<bool> updateTodoCategory(String todoId, String newCategory) async {
     try {
-      await _firestore!.collection(_collection).doc(todoId).update({
+      await _firestore.collection(_collection).doc(todoId).update({
         'category': newCategory,
       });
       
@@ -632,7 +626,7 @@ class FirestoreTodoService {
       // 중복 카테고리만 정리하고 기본 카테고리는 추가하지 않음
       await cleanupDuplicateCategories();
       
-      final snapshot = await _firestore!
+      final snapshot = await _firestore
           .collection(_categoriesCollection)
           .where('userId', isEqualTo: _userId)
           .get();
@@ -649,7 +643,7 @@ class FirestoreTodoService {
     try {
       print('🧹 중복 카테고리 정리 시작...');
       
-      final snapshot = await _firestore!
+      final snapshot = await _firestore
           .collection(_categoriesCollection)
           .where('userId', isEqualTo: _userId)
           .get();
@@ -709,7 +703,7 @@ class FirestoreTodoService {
     try {
       print('🧹 모든 카테고리 삭제 시작...');
       
-      final snapshot = await _firestore!
+      final snapshot = await _firestore
           .collection(_categoriesCollection)
           .where('userId', isEqualTo: _userId)
           .get();
@@ -733,7 +727,7 @@ class FirestoreTodoService {
       print('🔍 === 데이터 상태 확인 ===');
       
       // categories 컬렉션 확인
-      final categoriesSnapshot = await _firestore!
+      final categoriesSnapshot = await _firestore
           .collection(_categoriesCollection)
           .where('userId', isEqualTo: _userId)
           .get();
@@ -745,7 +739,7 @@ class FirestoreTodoService {
       }
       
       // todos 컬렉션 확인
-      final todosSnapshot = await _firestore!
+      final todosSnapshot = await _firestore
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .get();
@@ -774,7 +768,7 @@ class FirestoreTodoService {
   Stream<List<String>> getCategoriesFromTodos() {
     print('🔄 todos에서 카테고리 추출 시작...');
     
-    return _firestore!
+    return _firestore
         .collection(_collection)
         .where('userId', isEqualTo: _userId)
         .snapshots()
@@ -818,7 +812,7 @@ class FirestoreTodoService {
     try {
       print('🧹 모든 할일 삭제 시작...');
       
-      final snapshot = await _firestore!
+      final snapshot = await _firestore
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
           .get();
@@ -850,7 +844,7 @@ class FirestoreTodoService {
       final dateOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
       final dateString = DateFormat('yyyy-MM-dd').format(dateOnly);
       
-      await _firestore!.collection(_collection).doc(todoId).update({
+      await _firestore.collection(_collection).doc(todoId).update({
         'title': title,
         'priority': priority,
         'due_date_string': dateString,
