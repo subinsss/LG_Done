@@ -73,112 +73,42 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   }
 
   Future<void> _loadStatistics() async {
+    if (!mounted) return;
+    
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _isOfflineMode = false;
     });
-
+    
     try {
-      print('📊 통계 데이터 로딩 시작...');
+      switch (_tabController.index) {
+        case 0: // 일간
+          _dailyData = await _statisticsService.getDailyStats(_selectedDay);
+          break;
+        case 1: // 주간
+          _weeklyData = await _statisticsService.getWeeklyStats(_selectedWeek);
+          break;
+        case 2: // 월간
+          _monthlyData = await _statisticsService.getMonthlyStats(_selectedMonth);
+          break;
+        case 3: // 연간
+          _yearlyData = await _statisticsService.getYearlyStats(_selectedYear);
+          break;
+      }
       
-      // 타임아웃 설정 (10초)
-      final dailyFuture = _statisticsService.getDailyStats(_selectedDay);
-      
-      // 현재 탭에 따라 다른 데이터 로드
-      Future<List<DailyStats>> weeklyFuture;
-      Future<List<DailyStats>> monthlyFuture;
-      
-      // 주간 데이터는 현재 선택된 주간의 데이터를 가져오기
-      weeklyFuture = _statisticsService.getSpecificWeekStats(_selectedWeek);
-      
-      // 월간 데이터는 현재 선택된 월의 데이터를 가져오기
-      monthlyFuture = _statisticsService.getSpecificMonthStats(_selectedMonth);
-      
-      final yearlyFuture = _statisticsService.getSpecificYearStats(_selectedYear);
-      
-      // 배지 데이터도 함께 로드
-      final dailyAchievementsFuture = _statisticsService.getDailyAchievements(_selectedDay);
-      final weeklyAchievementsFuture = _statisticsService.getWeeklyAchievements();
-      final monthlyAchievementsFuture = _statisticsService.getMonthlyAchievements();
-      final yearlyAchievementsFuture = _statisticsService.getYearlyAchievements();
-      
-      // 병렬로 데이터 로드하되 타임아웃 설정
-      final results = await Future.wait([
-        dailyFuture.timeout(const Duration(seconds: 10)),
-        weeklyFuture.timeout(const Duration(seconds: 10)),
-        monthlyFuture.timeout(const Duration(seconds: 10)),
-        yearlyFuture.timeout(const Duration(seconds: 10)),
-        dailyAchievementsFuture.timeout(const Duration(seconds: 10)),
-        weeklyAchievementsFuture.timeout(const Duration(seconds: 10)),
-        monthlyAchievementsFuture.timeout(const Duration(seconds: 10)),
-        yearlyAchievementsFuture.timeout(const Duration(seconds: 10)),
-      ]);
-
-      // Firebase 데이터 확인
-      DailyStats dailyData = results[0] as DailyStats;
-      List<DailyStats> weeklyData = results[1] as List<DailyStats>;
-      List<DailyStats> monthlyData = results[2] as List<DailyStats>;
-      List<MonthlyStats> yearlyData = results[3] as List<MonthlyStats>;
-      
-      // 데이터가 모두 비어있으면 Firebase 연결 실패
-      bool hasFirebaseData = dailyData.studyTimeMinutes > 0 || 
-                            dailyData.completedTasks > 0 ||
-                            weeklyData.isNotEmpty ||
-                            monthlyData.isNotEmpty ||
-                            yearlyData.isNotEmpty;
-
+      if (!mounted) return;
       setState(() {
-        _dailyData = dailyData;
-        _weeklyData = weeklyData;
-        _monthlyData = monthlyData;
-        _yearlyData = yearlyData;
-        _dailyAchievements = results[4] as List<String>;
-        _weeklyAchievements = results[5] as List<String>;
-        _monthlyAchievements = results[6] as List<String>;
-        _yearlyAchievements = results[7] as List<String>;
         _isLoading = false;
-        _isOfflineMode = !hasFirebaseData;
-        _errorMessage = !hasFirebaseData ? 'Firebase에 연결할 수 없습니다. 할일을 완료하면 통계가 표시됩니다.' : null;
+        _isOfflineMode = false;
       });
-      
-      print('✅ 통계 데이터 로딩 완료');
     } catch (e) {
-      print('❌ 통계 데이터 로드 실패: $e');
-      
-      // 오류 발생 시 빈 데이터 사용
+      print('❌ 통계 로드 실패: $e');
+      if (!mounted) return;
       setState(() {
-        _dailyData = DailyStats.empty(_selectedDay);
-        _weeklyData = [];
-        _monthlyData = [];
-        _yearlyData = [];
-        _dailyAchievements = [];
-        _weeklyAchievements = [];
-        _monthlyAchievements = [];
-        _yearlyAchievements = [];
         _isLoading = false;
         _isOfflineMode = true;
-        _errorMessage = 'Firebase 연결에 실패했습니다. 네트워크 연결을 확인해주세요.';
+        _errorMessage = '데이터를 불러오는데 실패했습니다.';
       });
-      
-      // 사용자에게 알림 표시
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.cloud_off, color: Colors.white),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text('Firebase 연결 실패 - 할일을 완료하면 통계가 표시됩니다'),
-                ),
-              ],
-            ),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 4),
-          ),
-        );
-      }
     }
   }
 
