@@ -1,0 +1,2 @@
+C:/Users/427/DX_School/DX/apps/app_609/LG_Done/android/app/.cxx/Debug/533g11f6/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/427/DX_School/DX/apps/app_609/LG_Done/android/app/.cxx/Debug/533g11f6/arm64-v8a/CMakeFiles/rebuild_cache.dir
