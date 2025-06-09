@@ -175,11 +175,20 @@ class FirestoreTodoService {
   // Firebase 초기화 메서드
   void initialize(FirebaseFirestore firestoreInstance) {
     _firestore = firestoreInstance;
+    print('🔥 FirestoreTodoService 초기화 완료: ${_firestore != null}');
   }
 
   // Firebase 사용 가능 여부 확인
   Future<bool> _isFirebaseAvailable() async {
     return _firestore != null;
+  }
+
+  // 초기화 상태 확인 (디버깅용)
+  bool get isInitialized => _firestore != null;
+  
+  @override
+  String toString() {
+    return 'FirestoreTodoService(initialized: ${_firestore != null}, instance: ${hashCode})';
   }
 
   // 할일 추가 - Firestore에 직접 저장
@@ -231,6 +240,12 @@ class FirestoreTodoService {
   Stream<List<TodoItem>> getTodosStream() {
     print('🔄 Firestore 스트림 시작...');
     
+    // Firebase 연결 확인
+    if (_firestore == null) {
+      print('🔌 Firebase 연결 없음 - 빈 스트림 반환');
+      return Stream.value([]);
+    }
+    
     // 오늘 날짜 계산
     final today = DateTime.now();
     final todayString = DateFormat('yyyy-MM-dd').format(DateTime(today.year, today.month, today.day));
@@ -278,6 +293,106 @@ class FirestoreTodoService {
     });
   }
 
+  // 특정 날짜의 할일 목록 실시간 스트림
+  Stream<List<TodoItem>> getTodosStreamByDate(DateTime date) {
+    print('🔄 Firestore 스트림 시작...');
+    
+    // Firebase 연결 확인
+    if (_firestore == null) {
+      print('🔌 Firebase 연결 없음 - 빈 스트림 반환');
+      return Stream.value([]);
+    }
+    
+    // 선택된 날짜 계산
+    final dateString = DateFormat('yyyy-MM-dd').format(DateTime(date.year, date.month, date.day));
+    
+    print('📅 선택된 날짜 필터: $dateString');
+    
+    return _firestore!
+        .collection(_collection)
+        .where('userId', isEqualTo: _userId)
+        .where('due_date_string', isEqualTo: dateString)
+        .snapshots(includeMetadataChanges: true)
+        .handleError((error) {
+          print('❌ Firestore 스트림 오류: $error');
+          throw error;
+        })
+        .map((snapshot) {
+      print('📊 선택된 날짜 할일 개수: ${snapshot.docs.length}');
+      print('📊 메타데이터 - hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
+      print('📊 메타데이터 - isFromCache: ${snapshot.metadata.isFromCache}');
+      
+      final todos = snapshot.docs.map((doc) {
+        try {
+          return TodoItem.fromFirestore(doc);
+        } catch (e) {
+          print('❌ 문서 파싱 오류: $e');
+          print('❌ 문서 ID: ${doc.id}');
+          rethrow;
+        }
+      }).toList();
+      
+      print('✅ 선택된 날짜 할일 처리 완료: ${todos.length}개');
+      
+      return todos;
+    });
+  }
+
+  // 날짜별 할일 개수 가져오기 (캘린더 표시용) - 문자열 키 직접 사용
+  Future<Map<String, int>> getTodoCountsByMonth(DateTime month) async {
+    try {
+      if (_firestore == null) {
+        print('🔌 Firebase 연결 없음 - 빈 맵 반환');
+        return {};
+      }
+
+      // 해당 월의 시작일과 끝일 계산
+      final startOfMonth = DateTime(month.year, month.month, 1);
+      final endOfMonth = DateTime(month.year, month.month + 1, 0);
+      
+      final startDateString = DateFormat('yyyy-MM-dd').format(startOfMonth);
+      final endDateString = DateFormat('yyyy-MM-dd').format(endOfMonth);
+      
+      print('📅 월별 할일 개수 조회: $startDateString ~ $endDateString');
+      print('🔍 조회 조건: userId=$_userId, collection=$_collection');
+      
+      final snapshot = await _firestore!
+          .collection(_collection)
+          .where('userId', isEqualTo: _userId)
+          .where('due_date_string', isGreaterThanOrEqualTo: startDateString)
+          .where('due_date_string', isLessThanOrEqualTo: endDateString)
+          .get();
+      
+      print('📊 Firebase에서 가져온 문서 개수: ${snapshot.docs.length}');
+      
+      // 날짜별 개수 집계 - 문자열 키 직접 사용
+      Map<String, int> todoCountsByDate = {};
+      
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final dateString = data['due_date_string'] as String?;
+        final title = data['title'] as String? ?? 'Unknown';
+        
+        print('📄 문서: $title, 날짜: $dateString');
+        
+        if (dateString != null && dateString.isNotEmpty) {
+          // DateTime 변환 없이 바로 문자열 키로 카운팅
+          todoCountsByDate[dateString] = (todoCountsByDate[dateString] ?? 0) + 1;
+          print('  ✅ 날짜 $dateString 개수: ${todoCountsByDate[dateString]}');
+        } else {
+          print('  ⚠️ 날짜 문자열이 비어있음');
+        }
+      }
+      
+      print('✅ 월별 할일 개수 조회 완료: ${todoCountsByDate.length}개 날짜');
+      return todoCountsByDate;
+      
+    } catch (e) {
+      print('❌ 월별 할일 개수 조회 실패: $e');
+      return {};
+    }
+  }
+
   // 할일 완료 상태 토글 - Firestore에 직접 업데이트
   Future<bool> toggleTodoCompletion(String todoId, bool isCompleted) async {
     try {
@@ -301,6 +416,133 @@ class FirestoreTodoService {
       return true;
     } catch (e) {
       print('❌ 할일 삭제 실패: $e');
+      return false;
+    }
+  }
+
+  // 할일을 내일로 이동 (현재 할일 날짜 기준으로 하루 증가)
+  Future<bool> moveTodoToTomorrow(String todoId) async {
+    try {
+      // 원본 할일 정보 가져오기
+      final docSnapshot = await _firestore!.collection(_collection).doc(todoId).get();
+      if (!docSnapshot.exists) {
+        print('❌ 원본 할일을 찾을 수 없음: $todoId');
+        return false;
+      }
+      
+      final originalData = docSnapshot.data()!;
+      final category = originalData['category'] ?? '';
+      final originalDateString = originalData['due_date_string'] as String?;
+      
+      if (originalDateString == null || originalDateString.isEmpty) {
+        print('❌ 원본 할일에 날짜 정보가 없음: $todoId');
+        return false;
+      }
+      
+      // 원본 날짜를 DateTime으로 변환한 후 하루 증가
+      final originalDate = DateTime.parse(originalDateString);
+      final nextDay = originalDate.add(Duration(days: 1));
+      final nextDayString = DateFormat('yyyy-MM-dd').format(nextDay);
+      
+      print('📅 내일하기: ${originalDateString} → $nextDayString');
+      
+      // 새로운 날짜의 해당 카테고리 할일 개수 확인해서 새로운 order 설정
+      final existingTodos = await _firestore!
+          .collection(_collection)
+          .where('userId', isEqualTo: _userId)
+          .where('category', isEqualTo: category)
+          .where('due_date_string', isEqualTo: nextDayString)
+          .get();
+      
+      final newOrder = existingTodos.docs.length; // 0부터 시작
+      
+      await _firestore!.collection(_collection).doc(todoId).update({
+        'due_date_string': nextDayString,
+        'order': newOrder,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      print('✅ 할일을 내일로 이동: $todoId → $nextDayString (새 order: $newOrder)');
+      return true;
+    } catch (e) {
+      print('❌ 할일 내일 이동 실패: $e');
+      return false;
+    }
+  }
+
+  // 할일을 복사해서 내일 추가 (현재 할일 날짜 기준으로 하루 증가)
+  Future<bool> copyTodoToTomorrow(String todoId) async {
+    try {
+      // 원본 할일 가져오기
+      final docSnapshot = await _firestore!.collection(_collection).doc(todoId).get();
+      if (!docSnapshot.exists) {
+        print('❌ 원본 할일을 찾을 수 없음: $todoId');
+        return false;
+      }
+      
+      final originalData = docSnapshot.data()!;
+      final category = originalData['category'] ?? '';
+      final originalDateString = originalData['due_date_string'] as String?;
+      
+      if (originalDateString == null || originalDateString.isEmpty) {
+        print('❌ 원본 할일에 날짜 정보가 없음: $todoId');
+        return false;
+      }
+      
+      // 원본 날짜를 DateTime으로 변환한 후 하루 증가
+      final originalDate = DateTime.parse(originalDateString);
+      final nextDay = originalDate.add(Duration(days: 1));
+      final nextDayString = DateFormat('yyyy-MM-dd').format(nextDay);
+      
+      print('📅 내일 또하기: ${originalDateString} → $nextDayString');
+      print('📋 복사할 할일: ${originalData['title']} (완료상태: ${originalData['is_completed'] ?? originalData['isCompleted']})');
+      
+      // 새로운 날짜의 해당 카테고리 할일 개수 확인해서 새로운 order 설정
+      final existingTodos = await _firestore!
+          .collection(_collection)
+          .where('userId', isEqualTo: _userId)
+          .where('category', isEqualTo: category)
+          .where('due_date_string', isEqualTo: nextDayString)
+          .get();
+      
+      final newOrder = existingTodos.docs.length; // 0부터 시작
+      
+      // 새로운 할일 데이터 생성 - 원본 데이터 기반으로 시간 관련만 초기화
+      final newTodoData = Map<String, dynamic>.from(originalData);
+      
+      // 변경해야 할 필드들만 업데이트
+      newTodoData['due_date_string'] = nextDayString;
+      newTodoData['is_completed'] = false; // 미완료로 초기화
+      newTodoData['order'] = newOrder;
+      
+      // 시간 관련 필드들 초기화 (있으면)
+      if (newTodoData.containsKey('pause_times')) {
+        newTodoData['pause_times'] = [];
+      }
+      if (newTodoData.containsKey('resume_times')) {
+        newTodoData['resume_times'] = [];
+      }
+      if (newTodoData.containsKey('start_time')) {
+        newTodoData['start_time'] = null;
+      }
+      if (newTodoData.containsKey('stop_time')) {
+        newTodoData['stop_time'] = null;
+      }
+      
+      // Firestore 자동 생성 필드들 제거
+      newTodoData.remove('id');
+      newTodoData.remove('createdAt');
+      newTodoData.remove('updatedAt');
+      
+      print('🔄 새로운 할일 데이터: $newTodoData');
+      
+      // 새로운 할일 추가
+      final docRef = await _firestore!.collection(_collection).add(newTodoData);
+      
+      print('✅ 할일을 내일로 복사 완료: ${originalData['title']} → $nextDayString (새 ID: ${docRef.id}, order: $newOrder)');
+      return true;
+    } catch (e) {
+      print('❌ 할일 내일 복사 실패: $e');
       return false;
     }
   }
@@ -597,6 +839,12 @@ class FirestoreTodoService {
   Stream<Map<String, int>> getCategoryColorsStream() {
     print('🔄 카테고리 색상 스트림 시작...');
     
+    // Firebase 연결 확인
+    if (_firestore == null) {
+      print('🔌 Firebase 연결 없음 - 빈 색상 맵 반환');
+      return Stream.value(<String, int>{});
+    }
+    
     return _firestore!
         .collection(_categoriesCollection)
         .where('userId', isEqualTo: _userId)
@@ -627,6 +875,12 @@ class FirestoreTodoService {
   // 카테고리 목록 가져오기
   Stream<List<String>> getCategoriesStream() {
     print('🔄 카테고리 스트림 시작...');
+    
+    // Firebase 연결 확인
+    if (_firestore == null) {
+      print('🔌 Firebase 연결 없음 - 빈 카테고리 목록 반환');
+      return Stream.value(['기본']); // 기본 카테고리라도 제공
+    }
     
     return _firestore!
         .collection(_categoriesCollection)

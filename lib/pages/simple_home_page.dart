@@ -41,6 +41,12 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now(); // 오늘 날짜로 고정
   bool _isCalendarExpanded = false;
+  
+  // 날짜별 할일 개수 (캘린더 표시용) - 문자열 키 사용
+  Map<String, int> _todoCountsByDate = {};
+  
+  // 카테고리별 접힘 상태 관리
+  Map<String, bool> _categoryCollapsed = {};
 
   // 할일 추가 컨트롤러
   final TextEditingController _todoController = TextEditingController();
@@ -136,6 +142,14 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     });
 
     try {
+      // FirestoreTodoService 초기화 상태 확인 및 재초기화
+      if (!_firestoreService.isInitialized) {
+        print('⚠️ FirestoreTodoService가 초기화되지 않음. 재초기화 시도...');
+        final db = FirebaseFirestore.instance;
+        _firestoreService.initialize(db);
+        print('🔧 FirestoreTodoService 재초기화 완료');
+      }
+      
       // Firebase 연결 상태 확인 및 재시도
       print('🔥 Firebase 연결 상태 확인 중...');
       final db = FirebaseFirestore.instance;
@@ -184,6 +198,11 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       _listenToCategoryColors();
       _listenToSelectedCharacter();
       _listenToProfile();
+      
+      // 초기 월별 할일 개수 로드
+      print('🚀 초기 월별 할일 개수 로드 시작...');
+      await _loadTodoCountsForMonth(_focusedDay);
+      print('🚀 초기 월별 할일 개수 로드 완료!');
       
       print('✅ 모든 스트림 연결 완료');
       
@@ -578,42 +597,108 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     );
   }
 
-  // Firestore에서 할일 목록 실시간 구독
+  // Firestore에서 할일 목록 실시간 구독 (선택된 날짜 기준)
   void _listenToTodos() {
     print('🔄 Firebase 연결 중...');
+    print('🔍 FirestoreTodoService 초기화 상태 확인: ${_firestoreService.toString()}');
+    
+    // FirestoreTodoService가 초기화되지 않은 경우 재초기화
+    if (!_firestoreService.isInitialized) {
+      print('! FirestoreTodoService가 초기화되지 않음. 재초기화 시도...');
+      final firestore = FirebaseFirestore.instance;
+      _firestoreService.initialize(firestore);
+      print('🔧 FirestoreTodoService 재초기화 완료');
+    }
     
     _todosSubscription?.cancel();
     
-    _todosSubscription = _firestoreService.getTodosStream().listen(
-      (todos) {
-        print('✅ 데이터 수신: ${todos.length}개 할일');
-        
-        setState(() {
-          _todos = todos;
-        });
-      },
-      onError: (error) {
-        print('❌ 연결 오류: $error');
-        
-        Future.delayed(const Duration(milliseconds: 500), () {
+    try {
+      // 선택된 날짜에 맞는 할일 스트림 구독
+      _todosSubscription = _firestoreService.getTodosStreamByDate(_selectedDay).listen(
+        (todos) {
+          print('✅ 데이터 수신: ${todos.length}개 할일 (${DateFormat('yyyy-MM-dd').format(_selectedDay)})');
+          
           if (mounted) {
-            _listenToTodos();
+            setState(() {
+              _todos = todos;
+            });
+            
+            // 할일 변경 시 캘린더 개수도 업데이트
+            _loadTodoCountsForMonth(_focusedDay);
           }
+        },
+        onError: (error) {
+          print('❌ 연결 오류: $error');
+          
+          // 오프라인 모드에서 기본 할일 표시
+          if (mounted) {
+            setState(() {
+              _todos = _getDefaultTodos();
+            });
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('오프라인 모드로 동작합니다'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        },
+      );
+    } catch (e) {
+      print('❌ 스트림 생성 오류: $e');
+      
+      // 예외 발생 시 기본 할일 표시
+      if (mounted) {
+        setState(() {
+          _todos = _getDefaultTodos();
         });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('연결 오류 발생. 재연결 중...'),
-            backgroundColor: Colors.red,
-            action: SnackBarAction(
-              label: '재연결',
-              textColor: Colors.white,
-              onPressed: () => _listenToTodos(),
-            ),
-          ),
-        );
-      },
-    );
+      }
+    }
+  }
+
+  // 날짜 변경 시 새로운 스트림 구독
+  void _updateTodosForSelectedDate() {
+    print('📅 날짜 변경: ${DateFormat('yyyy-MM-dd').format(_selectedDay)}');
+    _listenToTodos(); // 새로운 날짜로 스트림 재구독
+    // 캘린더 할일 개수도 업데이트
+    _loadTodoCountsForMonth(_selectedDay);
+  }
+
+  // 월별 할일 개수 로드
+  Future<void> _loadTodoCountsForMonth(DateTime month) async {
+    try {
+      print('🔄 월별 할일 개수 로드 시작: ${DateFormat('yyyy-MM').format(month)}');
+      final counts = await _firestoreService.getTodoCountsByMonth(month);
+      
+      // 이제 Firebase에서 바로 문자열 키로 받아옴 (변환 불필요)
+      setState(() {
+        _todoCountsByDate = counts;
+      });
+      print('📅 월별 할일 개수 로드 완료: ${counts.length}개 날짜');
+      
+      // 각 날짜별 개수 출력
+      counts.forEach((dateString, count) {
+        print('  - $dateString: $count개');
+      });
+      
+      // 6월 10일 특별 확인
+      final june10 = '2024-06-10';
+      if (counts.containsKey(june10)) {
+        print('🎯 6월 10일 확인됨: ${counts[june10]}개 할일');
+      } else {
+        print('⚠️ 6월 10일 데이터 없음');
+      }
+      
+      // 전체 _todoCountsByDate 상태 출력
+      print('🗂️ 현재 _todoCountsByDate 전체: $_todoCountsByDate');
+    } catch (e) {
+      print('❌ 월별 할일 개수 로드 실패: $e');
+      setState(() {
+        _todoCountsByDate = {};
+      });
+    }
   }
 
   // 할일 토글 (Firestore 업데이트)
@@ -638,12 +723,173 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     
     if (success) {
       print('✅ Firestore 삭제 성공: ${todo.id}');
+      // 캘린더 할일 개수 업데이트
+      await _loadTodoCountsForMonth(_selectedDay);
     } else {
       print('❌ Firestore 삭제 실패: ${todo.id}');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('할일 삭제에 실패했습니다')),
       );
     }
+  }
+
+  // 할일 액션 처리 (수정, 삭제, 내일하기, 내일 또하기)
+  Future<void> _handleTodoAction(TodoItem todo, String action) async {
+    switch (action) {
+      case 'edit':
+        _showEditTodoDialog(todo);
+        break;
+      case 'delete':
+        // 간단한 삭제 확인 다이얼로그
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            contentPadding: const EdgeInsets.all(20),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '할일을 삭제하시겠습니까?',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        style: TextButton.styleFrom(
+                          backgroundColor: Colors.grey.shade100,
+                          foregroundColor: Colors.grey.shade700,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: Text(
+                          '취소',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        style: TextButton.styleFrom(
+                          backgroundColor: Colors.red.shade600,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: Text(
+                          '삭제하기',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+        if (confirmed == true) {
+          await _deleteTodo(todo);
+        }
+        break;
+      case 'move_tomorrow':
+        // 내일하기 (현재 할일 날짜 기준으로 하루 증가)
+        final success = await _firestoreService.moveTodoToTomorrow(todo.id);
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${todo.title}을(를) 다음 날로 이동했습니다')),
+          );
+          // 캘린더 할일 개수 업데이트 (현재 날짜와 이동된 날짜)
+          await _loadTodoCountsForMonth(_selectedDay);
+          if (todo.dueDate != null) {
+            final nextDay = todo.dueDate!.add(Duration(days: 1));
+            await _loadTodoCountsForMonth(nextDay);
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('내일하기에 실패했습니다')),
+          );
+        }
+        break;
+      case 'copy_tomorrow':
+        // 내일 또하기 (현재 할일 날짜 기준으로 하루 증가해서 복사)
+        final success = await _firestoreService.copyTodoToTomorrow(todo.id);
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${todo.title}을(를) 다음 날로 복사했습니다')),
+          );
+          // 캘린더 할일 개수 업데이트 (복사된 날짜)
+          if (todo.dueDate != null) {
+            final nextDay = todo.dueDate!.add(Duration(days: 1));
+            await _loadTodoCountsForMonth(nextDay);
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('내일 또하기에 실패했습니다')),
+          );
+        }
+        break;
+    }
+  }
+
+  // 오프라인 모드용 기본 할일 목록
+  List<TodoItem> _getDefaultTodos() {
+    final today = DateTime.now();
+    return [
+      TodoItem(
+        id: 'default_1',
+        title: '🌅 오늘의 계획 세우기',
+        priority: '높음',
+        dueDate: today,
+        category: '기본',
+        isCompleted: false,
+        userId: 'anonymous',
+        order: 0,
+      ),
+      TodoItem(
+        id: 'default_2',
+        title: '📚 새로운 기술 학습하기',
+        priority: '보통',
+        dueDate: today,
+        category: '공부',
+        isCompleted: false,
+        userId: 'anonymous',
+        order: 1,
+      ),
+      TodoItem(
+        id: 'default_3', 
+        title: '💪 운동 30분하기',
+        priority: '보통',
+        dueDate: today,
+        category: '건강',
+        isCompleted: false,
+        userId: 'anonymous',
+        order: 2,
+      ),
+    ];
   }
 
   // 할일 추가 (Firestore에 추가)
@@ -667,6 +913,9 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       _todoController.clear();
       _categoryController.clear();
       Navigator.of(context).pop();
+      
+      // 캘린더 할일 개수 업데이트
+      await _loadTodoCountsForMonth(_selectedDay);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('할일 추가에 실패했습니다')),
@@ -690,7 +939,11 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       category: newCategory,
     );
     
-    if (!success) {
+    if (success) {
+      // 캘린더 할일 개수 업데이트
+      await _loadTodoCountsForMonth(_selectedDay);
+      await _loadTodoCountsForMonth(newDueDate); // 새로운 날짜의 개수도 업데이트
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('할일 수정에 실패했습니다')),
       );
@@ -948,10 +1201,43 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
               focusedDay: _focusedDay,
               selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
               calendarFormat: CalendarFormat.month,
-              eventLoader: (day) => _todos.where((todo) {
-                if (todo.dueDate == null) return false;
-                return isSameDay(todo.dueDate!, day);
-              }).toList(),
+              eventLoader: (day) {
+                final dayString = DateFormat('yyyy-MM-dd').format(day);
+                
+                // 현재 선택된 날짜면 _todos 데이터 사용 (가장 정확함)
+                if (isSameDay(day, _selectedDay) && _todos.isNotEmpty) {
+                  final todosForDay = _todos.length;
+                  print('📅 선택된 날짜 $dayString: $todosForDay개 할일');
+                  return List.generate(todosForDay, (index) => TodoItem(
+                    id: 'selected_day_$index',
+                    title: 'dummy',
+                    isCompleted: false,
+                    category: '',
+                    priority: 'medium',
+                    dueDate: day,
+                    userId: 'dummy',
+                  ));
+                }
+                
+                // 다른 날짜는 _todoCountsByDate에서 확인
+                int count = _todoCountsByDate[dayString] ?? 0;
+                
+                if (count > 0) {
+                  print('📅 $dayString: $count개 할일 (캐시됨)');
+                } else {
+                  print('📅 $dayString: 할일 없음');
+                }
+                
+                return List.generate(count, (index) => TodoItem(
+                  id: 'cached_$dayString$index',
+                  title: 'dummy',
+                  isCompleted: false,
+                  category: '',
+                  priority: 'medium',
+                  dueDate: day,
+                  userId: 'dummy',
+                ));
+              },
               startingDayOfWeek: StartingDayOfWeek.monday,
               calendarStyle: CalendarStyle(
                 outsideDaysVisible: false,
@@ -963,7 +1249,8 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   color: Colors.grey.withOpacity(0.3),
                   shape: BoxShape.circle,
                 ),
-                markersMaxCount: 0, // 마커 숨기기
+                markersMaxCount: 1, // 할일 개수 표시 활성화
+                canMarkersOverflow: false,
               ),
               calendarBuilders: CalendarBuilders(
                 markerBuilder: (context, day, events) {
@@ -977,7 +1264,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                         ),
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         child: Text(
-                          '${events.length}',
+                          '...',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,
@@ -1007,9 +1294,15 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   _focusedDay = focusedDay;
                   _selectedDate = selectedDay; // 할일 추가시 사용할 날짜도 업데이트
                 });
+                // 선택된 날짜의 할일을 새로 불러오기
+                _updateTodosForSelectedDate();
               },
-              onPageChanged: (focusedDay) {
-                _focusedDay = focusedDay;
+              onPageChanged: (focusedDay) async {
+                setState(() {
+                  _focusedDay = focusedDay;
+                });
+                // 새로운 월의 할일 개수 로드
+                await _loadTodoCountsForMonth(focusedDay);
               },
             ),
           ],
@@ -1135,86 +1428,119 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 카테고리 헤더
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _getCategoryColor(category).withOpacity(0.1),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    topRight: Radius.circular(16),
+              // 카테고리 헤더 (접기/펼치기 기능 포함)
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _categoryCollapsed[category] = !(_categoryCollapsed[category] ?? false);
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _getCategoryColor(category).withOpacity(0.1),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(16),
+                      topRight: const Radius.circular(16),
+                      bottomLeft: Radius.circular((_categoryCollapsed[category] ?? false) ? 16 : 0),
+                      bottomRight: Radius.circular((_categoryCollapsed[category] ?? false) ? 16 : 0),
+                    ),
                   ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: _getCategoryColor(category),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          category,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: _getCategoryColor(category),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _getCategoryColor(category).withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${categoryTodos.length}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: _getCategoryColor(category),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            // 접기/펼치기 아이콘
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Icon(
+                                (_categoryCollapsed[category] ?? false) 
+                                    ? Icons.keyboard_arrow_right 
+                                    : Icons.keyboard_arrow_down,
+                                color: _getCategoryColor(category),
+                                size: 16,
+                              ),
                             ),
-                          ),
+                            const SizedBox(width: 12),
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: _getCategoryColor(category),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                category,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: _getCategoryColor(category),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _getCategoryColor(category).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${categoryTodos.length}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: _getCategoryColor(category),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    IconButton(
-                      onPressed: () => _showAddTodoDialogForCategory(category),
-                      icon: Icon(
-                        Icons.add,
-                        color: _getCategoryColor(category),
-                        size: 20,
                       ),
-                      tooltip: '$category에 할일 추가',
-                    ),
-                  ],
+                      if (!(_categoryCollapsed[category] ?? false))
+                        IconButton(
+                          onPressed: () => _showAddTodoDialogForCategory(category),
+                          icon: Icon(
+                            Icons.add,
+                            color: _getCategoryColor(category),
+                            size: 20,
+                          ),
+                          tooltip: '$category에 할일 추가',
+                        ),
+                    ],
+                  ),
                 ),
               ),
               
-              // 카테고리별 할일 목록
-              if (categoryTodos.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Center(
-                    child: Text(
-                      '오늘 이 카테고리의 할일이 없습니다',
-                      style: TextStyle(
-                        color: Colors.grey.shade400,
-                        fontSize: 14,
+              // 카테고리별 할일 목록 (접힌 상태가 아닐 때만 표시)
+              if (!(_categoryCollapsed[category] ?? false)) ...[
+                if (categoryTodos.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Center(
+                      child: Text(
+                        '오늘 이 카테고리의 할일이 없습니다',
+                        style: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
                     ),
-                  ),
-                )
-              else
-                _buildReorderableTodoList(category, categoryTodos),
+                  )
+                else
+                  _buildReorderableTodoList(category, categoryTodos),
+              ],
             ],
           ),
         );
@@ -1427,30 +1753,166 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
               ],
             ),
           ),
-          // 수정 버튼
-          InkWell(
-            onTap: () => _showEditTodoDialog(todo),
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              child: Icon(
-                Icons.edit_outlined, 
-                color: Colors.blue.shade400, 
-                size: 18,
-              ),
+          // 더보기 메뉴 버튼 (수정, 삭제, 내일하기, 내일 또하기)
+          PopupMenuButton<String>(
+            onSelected: (value) => _handleTodoAction(todo, value),
+            offset: const Offset(-10, 45),
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-          ),
-          const SizedBox(width: 4),
-          // 삭제 버튼
-          InkWell(
-            onTap: () => _deleteTodo(todo),
-            borderRadius: BorderRadius.circular(20),
+            color: Colors.white,
+            itemBuilder: (context) {
+              // 디버깅: 할일 완료 상태 확인
+              print('🔍 할일 "${todo.title}" 완료 상태: ${todo.isCompleted}');
+              
+              // 기본 메뉴 아이템들 (수정, 삭제)
+              List<PopupMenuEntry<String>> items = [
+                                  PopupMenuItem(
+                    value: 'edit',
+                    height: 40,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.edit_outlined, color: Colors.blue.shade700, size: 18),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '수정',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade800,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                                  PopupMenuItem(
+                    value: 'delete',
+                    height: 40,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.delete_outline, color: Colors.red.shade700, size: 18),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '삭제',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade800,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ];
+
+              // 완료되지 않은 할일에만 "내일하기"와 "내일 또하기" 옵션 추가
+              if (!todo.isCompleted) {
+                items.addAll([
+                                      PopupMenuItem(
+                      value: 'move_tomorrow',
+                      height: 40,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(Icons.arrow_forward, color: Colors.orange.shade700, size: 18),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              '내일하기',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade800,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                                      PopupMenuItem(
+                      value: 'copy_tomorrow',
+                      height: 40,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(Icons.copy, color: Colors.green.shade700, size: 18),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              '내일 또하기',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade800,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ]);
+              }
+
+              return items;
+            },
             child: Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(left: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.grey.shade200,
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.shade100,
+                    offset: const Offset(0, 2),
+                    blurRadius: 4,
+                    spreadRadius: 0,
+                  ),
+                ],
+              ),
               child: Icon(
-                Icons.delete_outline, 
-                color: Colors.grey.shade400, 
-                size: 18,
+                Icons.more_horiz,
+                color: Colors.grey.shade700,
+                size: 16,
               ),
             ),
           ),
@@ -2373,76 +2835,158 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: Colors.grey.shade200, width: 1),
         ),
-        title: Text(
-          '카테고리 삭제',
-          style: TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-          ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.delete_outline,
+                color: Colors.red.shade700,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              '카테고리 삭제',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade800,
+                fontSize: 18,
+              ),
+            ),
+          ],
         ),
-        content: Text(
-          '카테고리 "$category"를 삭제하시겠습니까?\n이 카테고리의 모든 할일도 함께 삭제됩니다.',
-          style: TextStyle(
-            color: Colors.grey.shade700,
-            height: 1.5,
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: RichText(
+            text: TextSpan(
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey.shade700,
+                height: 1.5,
+              ),
+              children: [
+                TextSpan(text: '카테고리 "'),
+                TextSpan(
+                  text: category,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+                TextSpan(text: '"를 삭제하시겠습니까?\n\n'),
+                TextSpan(
+                  text: '⚠️ 이 카테고리의 모든 할일도 함께 삭제됩니다.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.orange.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                TextSpan(
+                  text: '\n이 작업은 되돌릴 수 없습니다.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade500,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.grey.shade600,
-            ),
-            child: const Text('취소'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop(); // 확인 다이얼로그 닫기
-              
-              try {
-                final success = await _firestoreService.deleteCategory(category);
-                if (success) {
-                  // 다이얼로그 내 UI 즉시 업데이트
-                  setDialogState(() {
-                    _categories.remove(category);
-                    // 선택된 카테고리가 삭제된 경우 초기화
-                    if (_selectedCategory == category) {
-                      _selectedCategory = _categories.isNotEmpty ? _categories.first : '';
-                    }
-                  });
-                  
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('카테고리 "$category"가 삭제되었습니다'),
-                      backgroundColor: Colors.black,
+          Container(
+            width: double.infinity,
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: Colors.grey.shade50,
+                      foregroundColor: Colors.grey.shade700,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(color: Colors.grey.shade200),
+                      ),
                     ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('카테고리 삭제에 실패했습니다'),
-                      backgroundColor: Colors.grey.shade600,
+                    child: Text(
+                      '취소',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
                     ),
-                  );
-                }
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('카테고리 삭제에 실패했습니다'),
-                    backgroundColor: Colors.grey.shade600,
                   ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextButton(
+                    onPressed: () async {
+                      Navigator.of(context).pop(); // 확인 다이얼로그 닫기
+                      
+                      try {
+                        final success = await _firestoreService.deleteCategory(category);
+                        if (success) {
+                          // 다이얼로그 내 UI 즉시 업데이트
+                          setDialogState(() {
+                            _categories.remove(category);
+                            // 선택된 카테고리가 삭제된 경우 초기화
+                            if (_selectedCategory == category) {
+                              _selectedCategory = _categories.isNotEmpty ? _categories.first : '';
+                            }
+                          });
+                          
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('카테고리 "$category"가 삭제되었습니다'),
+                              backgroundColor: Colors.black,
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('카테고리 삭제에 실패했습니다'),
+                              backgroundColor: Colors.grey.shade600,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('카테고리 삭제에 실패했습니다'),
+                            backgroundColor: Colors.grey.shade600,
+                          ),
+                        );
+                      }
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      '삭제',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            child: const Text('삭제'),
           ),
         ],
       ),
@@ -2839,16 +3383,11 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
 
   // 일시정지 시간 계산
   int _calculatePausedTime(TodoItem todo) {
-    // pause_times가 비어있거나 1개만 있는 경우 쉬는시간 없음
-    if (todo.pauseTimes == null || todo.pauseTimes!.isEmpty || todo.pauseTimes!.length <= 1) {
-      return 0;
-    }
+    // pause_times와 resume_times 둘 다 값이 없으면 쉬는시간 없음
+    bool hasValidPauseData = todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty;
+    bool hasValidResumeData = todo.resumeTimes != null && todo.resumeTimes!.isNotEmpty;
     
-    bool hasValidResumeData = todo.resumeTimes != null && 
-                              todo.resumeTimes!.isNotEmpty && 
-                              todo.resumeTimes!.length > 0;
-    
-    if (!hasValidResumeData) {
+    if (!hasValidPauseData || !hasValidResumeData || todo.pauseTimes!.length <= 1) {
       return 0;
     }
     
@@ -2890,31 +3429,39 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   // 시간 시각화 위젯
   Widget _buildTimeVisualization(TodoItem todo) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade200, width: 0.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              Icon(Icons.schedule, size: 12, color: Colors.grey.shade600),
-              const SizedBox(width: 4),
-              Text(
-                '작업 타임라인',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade700,
+              Icon(Icons.schedule, size: 16, color: Colors.grey.shade600),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '작업 타임라인',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          _buildTimeline(todo),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            child: _buildTimeline(todo),
+          ),
         ],
       ),
     );
@@ -2934,12 +3481,13 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       ));
     }
 
-    // 2. 쉬는 시간 처리 (pause_times가 2개 이상일 때만 표시)
+    // 2. 쉬는 시간 처리 (pause_times와 resume_times 둘 다 값이 있을 때만 표시)
+    bool hasValidPauseData = todo.pauseTimes != null && 
+                             todo.pauseTimes!.isNotEmpty;
     bool hasValidResumeData = todo.resumeTimes != null && 
-                              todo.resumeTimes!.isNotEmpty && 
-                              todo.resumeTimes!.length > 0;
+                              todo.resumeTimes!.isNotEmpty;
     
-    if (todo.pauseTimes != null && todo.pauseTimes!.length > 1 && hasValidResumeData) {
+    if (hasValidPauseData && hasValidResumeData && todo.pauseTimes!.length > 1) {
       int pauseCount = todo.pauseTimes!.length;
       int resumeCount = todo.resumeTimes!.length;
       int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
@@ -2955,7 +3503,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     String? endTime;
     String endLabel = '완료';
     
-    if (todo.pauseTimes != null && todo.pauseTimes!.length > 1 && hasValidResumeData) {
+    if (hasValidPauseData && hasValidResumeData && todo.pauseTimes!.length > 1) {
       int pauseCount = todo.pauseTimes!.length;
       int resumeCount = todo.resumeTimes!.length;
       
@@ -2987,26 +3535,36 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
 
   // 타임라인 아이템
   Widget _buildTimelineItem(String label, String time, Color color, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      margin: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 16,
-            height: 16,
+            width: 20,
+            height: 20,
+            margin: const EdgeInsets.only(top: 1),
             decoration: BoxDecoration(
               color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: color, width: 1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color, width: 1.5),
             ),
-            child: Icon(icon, size: 10, color: color),
+            child: Icon(icon, size: 12, color: color),
           ),
-          const SizedBox(width: 8),
-          Text(
-            '$label: $time',
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.grey.shade700,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '$label: $time',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade700,
+                height: 1.4,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.visible,
             ),
           ),
         ],
@@ -3018,26 +3576,36 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   Widget _buildRestTimeItem(String startTime, String endTime) {
     String duration = _calculateRestDuration(startTime, endTime);
     
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      margin: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 16,
-            height: 16,
+            width: 20,
+            height: 20,
+            margin: const EdgeInsets.only(top: 1),
             decoration: BoxDecoration(
               color: Colors.orange.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.orange, width: 1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.orange, width: 1.5),
             ),
-            child: Icon(Icons.coffee, size: 10, color: Colors.orange),
+            child: Icon(Icons.coffee, size: 12, color: Colors.orange),
           ),
-          const SizedBox(width: 8),
-          Text(
-            '쉬는 시간: $startTime ~ $endTime ($duration)',
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.grey.shade700,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '쉬는 시간: $startTime ~ $endTime ($duration)',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade700,
+                height: 1.4,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.visible,
             ),
           ),
         ],

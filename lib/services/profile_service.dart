@@ -100,28 +100,43 @@ class ProfileService {
 
   // 프로필 실시간 스트림 (실시간 업데이트용)
   static Stream<Map<String, dynamic>> getProfileStream() {
-    return _firestore
-        .collection(_collectionName)
-        .doc(_defaultUserId)
-        .snapshots()
-        .map((doc) {
-      if (doc.exists) {
-        final data = doc.data()!;
-        
-        return {
-          'name': data['name'] ?? '사용자',
-          'email': data['email'] ?? '',
-          'phone': data['phone'] ?? '',
-          'profileImageUrl': data['profileImageUrl'] ?? '',
-        };
-      } else {
-        return {
-          'name': '사용자',
-          'email': '',
-          'phone': '',
-          'profileImageUrl': '',
-        };
-      }
-    });
+    try {
+      return _firestore
+          .collection(_collectionName)
+          .doc(_defaultUserId)
+          .snapshots()
+          .handleError((error) {
+            print('❌ 프로필 스트림 오류: $error');
+            throw error;
+          })
+          .map((doc) {
+        if (doc.exists) {
+          final data = doc.data()!;
+          
+          return {
+            'name': data['name'] ?? '사용자',
+            'email': data['email'] ?? '',
+            'phone': data['phone'] ?? '',
+            'profileImageUrl': data['profileImageUrl'] ?? '',
+          };
+        } else {
+          return {
+            'name': '사용자',
+            'email': '',
+            'phone': '',
+            'profileImageUrl': '',
+          };
+        }
+      });
+    } catch (e) {
+      print('❌ 프로필 스트림 초기화 오류: $e');
+      // 에러 발생 시 기본값 스트림 반환
+      return Stream.value({
+        'name': '사용자',
+        'email': '',
+        'phone': '',
+        'profileImageUrl': '',
+      });
+    }
   }
 } 

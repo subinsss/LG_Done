@@ -35,25 +35,29 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   try {
-    // Firebase 중복 초기화 방지
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      print('✅ Firebase 새로 초기화 완료!');
-    } else {
-      print('✅ Firebase 이미 초기화됨!');
-    }
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('✅ Firebase 초기화 완료!');
     
     // Firestore 및 서비스 초기화
     final firestore = FirebaseFirestore.instance;
     
-    // Firestore 설정 추가
+    // Firestore 설정 추가 - 오프라인 우선 모드
     if (defaultTargetPlatform == TargetPlatform.android) {
       firestore.settings = const Settings(
         persistenceEnabled: true,
         cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
       );
+      
+      // 오프라인 우선 모드 설정
+      print('🔧 오프라인 우선 모드로 설정합니다...');
+      try {
+        await firestore.disableNetwork();
+        await firestore.enableNetwork();
+      } catch (e) {
+        print('⚠️ 네트워크 설정 실패: $e');
+      }
     }
     
     // 개발 환경에서 에뮬레이터 사용 (선택사항)
@@ -67,15 +71,25 @@ Future<void> main() async {
       }
     }
     
-    FirestoreTodoService().initialize(firestore);
-    StatisticsService().initialize(firestore);
+    final todoService = FirestoreTodoService();
+    final statsService = StatisticsService();
+    
+    todoService.initialize(firestore);
+    statsService.initialize(firestore);
+    
     print('✅ 서비스 초기화 완료!');
+    print('🔍 TodoService 상태: $todoService');
+    print('🔍 StatsService 상태: $statsService');
     
     // 연결 테스트
     await _testFirestoreConnection(firestore);
     
   } catch (e) {
     print('❌ Firebase 초기화 오류: $e');
+    // Firebase 중복 초기화 오류인 경우 무시하고 계속 진행
+    if (e.toString().contains('duplicate-app') || e.toString().contains('already exists')) {
+      print('✅ Firebase 이미 초기화됨 - 계속 진행합니다.');
+    }
   }
   
   runApp(const MyApp());
