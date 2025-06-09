@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:math' as math;
+import 'dart:async';
 import '../services/statistics_service.dart';
+import '../services/firestore_todo_service.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({super.key});
@@ -14,8 +18,10 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   late AnimationController _progressController;
   late Animation<double> _progressAnimation;
   late TabController _tabController;
-  
-  final StatisticsService _statisticsService = StatisticsService();
+  late StatisticsService _statisticsService;
+  late FirestoreTodoService _firestoreService;
+  Map<String, Color> _categoryColors = {};
+  StreamSubscription? _categoryColorsSubscription;
   
   // 현재 선택된 기간
   final int _selectedPeriod = 0; // 0: 주간, 1: 월간, 2: 연간
@@ -46,6 +52,36 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _statisticsService = StatisticsService();
+    _firestoreService = FirestoreTodoService();
+    _listenToCategoryColors();
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging) {
+        setState(() {
+          // 데이터 초기화
+          switch (_tabController.index) {
+            case 0: // 일간
+              _dailyData = null;
+              break;
+            case 1: // 주간
+              _weeklyData = [];
+              break;
+            case 2: // 월간
+              _monthlyData = [];
+              break;
+            case 3: // 연간
+              _yearlyData = [];
+              break;
+          }
+          // UI 업데이트를 위한 상태 초기화
+          _isLoading = true;
+          _errorMessage = null;
+          _isOfflineMode = false;
+        });
+        // 새로운 데이터 로드
+        _loadStatistics();
+      }
+    });
     _progressController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
@@ -69,6 +105,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   void dispose() {
     _tabController.dispose();
     _progressController.dispose();
+    _categoryColorsSubscription?.cancel();
     super.dispose();
   }
 
@@ -455,9 +492,9 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Text(
-              '시간별 활동',
-              style: TextStyle(
+            Text(
+              _getTimeTableTitle(),
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
@@ -492,16 +529,13 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       );
     }
 
-    // Firebase 데이터를 사용한 기존 로직
-    Map<String, int> categoryTime = _getDailyUnifiedCategoryData();
-    
     // 현재 활성 탭에 따라 다른 hourlyActivity 데이터 사용
     Map<int, int> hourlyActivity = {};
     
     switch (_tabController.index) {
       case 0: // 일간
         if (_dailyData != null) {
-          hourlyActivity = _dailyData!.hourlyActivity;
+          hourlyActivity = Map<int, int>.from(_dailyData!.hourlyActivity);
         }
         break;
       case 1: // 주간
@@ -536,180 +570,168 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         break;
     }
     
-    return GestureDetector(
-      onPanUpdate: (details) {
-        // 스와이프 감지
-        if (details.delta.dx > 10) {
-          // 오른쪽 스와이프 - 이전날
-          _changePeriod('일간', -1);
-        } else if (details.delta.dx < -10) {
-          // 왼쪽 스와이프 - 다음날
-          _changePeriod('일간', 1);
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _getTimeTableTitle(),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                // 총 활동 시간 표시
-                if (hourlyActivity.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '총 ${_formatTime(hourlyActivity.values.fold(0, (a, b) => a + b))}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.blue.shade700,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            if (categoryTime.isNotEmpty) ...[
-              // 시간 라벨 (0시~23시)
-              SizedBox(
-                height: 30,
-                child: Row(
-                  children: List.generate(24, (hour) {
-                    return Expanded(
-                      child: Center(
-                        child: Text(
-                          hour.toString().padLeft(2, '0'),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _getTimeTableTitle(),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 10),
-              // 실제 데이터 기반 타임라인 (간단화)
-              Container(
-                height: 80,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(24, (hour) {
-                    int maxActivity = hourlyActivity.isEmpty ? 0 : hourlyActivity.values.reduce((a, b) => a > b ? a : b);
-                    int activityMinutes = hourlyActivity[hour] ?? 0;
-                    double heightRatio = maxActivity > 0 ? activityMinutes / maxActivity : 0.0;
-                    double barHeight = activityMinutes > 0 ? (60 * heightRatio + 10) : 10;
-                    
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          if (activityMinutes > 0) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  '${hour}시: ${_formatTime(activityMinutes)}',
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
-                                ),
-                                duration: const Duration(seconds: 1),
-                                backgroundColor: Colors.blue.shade600,
-                              ),
-                            );
-                          }
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 1),
-                          height: barHeight,
-                          decoration: BoxDecoration(
-                            color: activityMinutes > 0 
-                                ? _getActivityIntensityColor(activityMinutes, maxActivity)
-                                : Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(3),
-                            border: Border.all(
-                              color: activityMinutes > 0 
-                                  ? Colors.blue.shade200
-                                  : Colors.grey.shade200,
-                              width: 0.5,
-                            ),
-                          ),
-                          child: activityMinutes > 0 && barHeight > 20
-                              ? Center(
-                                  child: Text(
-                                    '${activityMinutes}m',
-                                    style: const TextStyle(
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                )
-                              : null,
-                        ),
-                      ),
-                    );
-                  }),
+              // 총 활동 시간 표시
+              if (hourlyActivity.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '총 ${_formatTime(hourlyActivity.values.fold(0, (a, b) => a + b))}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
                 ),
-              ),
-            ] else
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(40),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.schedule_outlined,
-                        size: 48,
-                        color: Colors.grey.shade400,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _getEmptyTimeTableMessage(),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (hourlyActivity.isNotEmpty) ...[
+            // 시간 라벨 (0시~23시)
+            SizedBox(
+              height: 30,
+              child: Row(
+                children: List.generate(24, (hour) {
+                  return Expanded(
+                    child: Center(
+                      child: Text(
+                        hour.toString().padLeft(2, '0'),
                         style: TextStyle(
-                          color: Colors.grey.shade500,
-                          fontSize: 16,
+                          fontSize: 10,
+                          color: Colors.grey.shade600,
                           fontWeight: FontWeight.w500,
                         ),
-                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '할일을 완료하면 시간별 활동이 표시됩니다',
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontSize: 14,
+                    ),
+                  );
+                }),
+              ),
+            ),
+            const SizedBox(height: 10),
+            // 실제 데이터 기반 타임라인
+            Container(
+              height: 80,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: List.generate(24, (hour) {
+                  int maxActivity = hourlyActivity.isEmpty ? 0 : hourlyActivity.values.reduce((a, b) => a > b ? a : b);
+                  int activityMinutes = hourlyActivity[hour] ?? 0;
+                  double heightRatio = maxActivity > 0 ? activityMinutes / maxActivity : 0.0;
+                  double barHeight = activityMinutes > 0 ? (60 * heightRatio + 10) : 10;
+                  
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        if (activityMinutes > 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                '${hour}시: ${_formatTime(activityMinutes)}',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              duration: const Duration(seconds: 1),
+                              backgroundColor: Colors.blue.shade600,
+                            ),
+                          );
+                        }
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 1),
+                        height: barHeight,
+                        decoration: BoxDecoration(
+                          color: activityMinutes > 0 
+                              ? _getActivityIntensityColor(activityMinutes, maxActivity)
+                              : Colors.grey.shade100,
+                          borderRadius: BorderRadius.zero, // 직사각형으로 변경
+                          border: Border.all(
+                            color: activityMinutes > 0 
+                                ? Colors.blue.shade200
+                                : Colors.grey.shade200,
+                            width: 0.5,
+                          ),
                         ),
+                        child: activityMinutes > 0 && barHeight > 20
+                            ? Center(
+                                child: Text(
+                                  '${activityMinutes}m',
+                                  style: const TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              )
+                            : null,
                       ),
-                    ],
-                  ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ] else
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(40),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.schedule_outlined,
+                      size: 48,
+                      color: Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _getEmptyTimeTableMessage(),
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '할일을 완료하면 시간별 활동이 표시됩니다',
+                      style: TextStyle(
+                        color: Colors.grey.shade400,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -910,6 +932,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                         categoryTime,
                         totalTime,
                         _progressAnimation.value,
+                        _categoryColors,
                       ),
                     );
                   },
@@ -920,7 +943,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Expanded(
                 child: Column(
                   children: categoryTime.entries.map((entry) {
-                    Color color = _getCategoryColor(entry.key);
+                    Color color = _categoryColors[entry.key] ?? Colors.grey.shade400;
                     double percentage = (entry.value / totalTime) * 100;
                     
                     return Padding(
@@ -1038,6 +1061,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             )
           : TabBarView(
               controller: _tabController,
+              physics: NeverScrollableScrollPhysics(), // 스와이프 기능 비활성화
               children: [
                 _buildDailyView(),
                 _buildWeeklyView(),
@@ -1074,18 +1098,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       return const Center(child: Text('주간 데이터가 없습니다.'));
     }
 
-    return GestureDetector(
-      onPanUpdate: (details) {
-        // 스와이프 감지
-        if (details.delta.dx > 10) {
-          // 오른쪽 스와이프 - 이전주
-          _changePeriod('주간', -1);
-        } else if (details.delta.dx < -10) {
-          // 왼쪽 스와이프 - 다음주
-          _changePeriod('주간', 1);
-        }
-      },
-      child: SingleChildScrollView(
+    return SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -1095,12 +1108,11 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             _buildAchievementBadges(_weeklyAchievements, '주간'),
             _buildWeeklySummaryCard(),
             const SizedBox(height: 20),
-              _buildWeeklyChart(),
-              const SizedBox(height: 20),
+            _buildWeeklyChart(),
+            const SizedBox(height: 20),
             _buildCategoryChart(_weeklyData),
           ],
         ),
-      ),
     );
   }
 
@@ -1666,7 +1678,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         height: totalHeight,
         decoration: BoxDecoration(
           color: Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.zero,
         ),
       );
     }
@@ -1691,12 +1703,8 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             height: segmentHeight,
             child: Container(
               decoration: BoxDecoration(
-                color: _getCategoryColor(entry.key),
-                borderRadius: currentBottom == 0 
-                    ? BorderRadius.vertical(bottom: Radius.circular(4))
-                    : currentBottom + segmentHeight >= totalHeight - 0.5
-                        ? BorderRadius.vertical(top: Radius.circular(4))
-                        : BorderRadius.zero,
+                color: _categoryColors[entry.key] ?? Colors.grey.shade400,
+                borderRadius: BorderRadius.zero,
               ),
             ),
           ),
@@ -1840,85 +1848,76 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       }
     }
     
-    return GestureDetector(
-      onPanUpdate: (details) {
-        if (details.delta.dx > 10) {
-          _changePeriod('월간', -1);
-        } else if (details.delta.dx < -10) {
-          _changePeriod('월간', 1);
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '월간 활동',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '월간 활동',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 200,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: List.generate(daysInMonth, (index) {
-                  int dayNumber = index + 1;
-                  DailyStats? dayData = dailyDataMap[dayNumber];
-                  
-                  Map<String, int> categoryTime = dayData != null ? _processCategories(dayData.categoryTime) : {};
-                  int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
-                  
-                  double maxHeight = 160;
-                  // 최대값 기준으로 높이 계산
-                  double barHeight = maxTotalTime > 0 ? (totalTime / maxTotalTime) * maxHeight : 0;
-                  
-                  return Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        AnimatedBuilder(
-                          animation: _progressAnimation,
-                          builder: (context, child) {
-                            return Container(
-                              width: 8,
-                              child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
-                            );
-                          },
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 200,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(daysInMonth, (index) {
+                int dayNumber = index + 1;
+                DailyStats? dayData = dailyDataMap[dayNumber];
+                
+                Map<String, int> categoryTime = dayData != null ? _processCategories(dayData.categoryTime) : {};
+                int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
+                
+                double maxHeight = 160;
+                // 최대값 기준으로 높이 계산
+                double barHeight = maxTotalTime > 0 ? (totalTime / maxTotalTime) * maxHeight : 0;
+                
+                return Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _progressAnimation,
+                        builder: (context, child) {
+                          return Container(
+                            width: 8,
+                            child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$dayNumber',
+                        style: TextStyle(
+                          fontSize: 7,
+                          color: dayData != null 
+                              ? Colors.grey.shade600 
+                              : Colors.grey.shade400,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '$dayNumber',
-                          style: TextStyle(
-                            fontSize: 9,
-                            color: dayData != null 
-                                ? Colors.grey.shade600 
-                                : Colors.grey.shade400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1945,100 +1944,91 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       }
     }
     
-    return GestureDetector(
+    return Container(
       key: ValueKey('yearly_chart_${_selectedYear.year}'),
-      onPanUpdate: (details) {
-        if (details.delta.dx > 10) {
-          _changePeriod('연간', -1);
-        } else if (details.delta.dx < -10) {
-          _changePeriod('연간', 1);
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '연간 활동',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '연간 활동',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 200,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: List.generate(12, (index) {
-                  int monthNumber = index + 1;
-                  MonthlyStats? monthData = monthlyDataMap[monthNumber];
-                  
-                  Map<String, int> categoryTime = monthData != null ? _processCategories(monthData.categoryTime) : {};
-                  int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
-                  
-                  double maxHeight = 160;
-                  // 최대값 기준으로 높이 계산
-                  double barHeight = maxTotalTime > 0 ? (totalTime / maxTotalTime) * maxHeight : 0;
-                  
-                  return Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          AnimatedBuilder(
-                            animation: _progressAnimation,
-                            builder: (context, child) {
-                              return Container(
-                                width: 16,
-                                child: _buildCategoryBar(categoryTime, barHeight),
-                              );
-                            },
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 200,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(12, (index) {
+                int monthNumber = index + 1;
+                MonthlyStats? monthData = monthlyDataMap[monthNumber];
+                
+                Map<String, int> categoryTime = monthData != null ? _processCategories(monthData.categoryTime) : {};
+                int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
+                
+                double maxHeight = 160;
+                // 최대값 기준으로 높이 계산
+                double barHeight = maxTotalTime > 0 ? (totalTime / maxTotalTime) * maxHeight : 0;
+                
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        AnimatedBuilder(
+                          animation: _progressAnimation,
+                          builder: (context, child) {
+                            return Container(
+                              width: 16,
+                              child: _buildCategoryBar(categoryTime, barHeight),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          months[index],
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: monthData != null 
+                                ? Colors.grey.shade600 
+                                : Colors.grey.shade400,
+                            fontWeight: monthData != null 
+                                ? FontWeight.normal 
+                                : FontWeight.w300,
                           ),
-                          const SizedBox(height: 8),
+                        ),
+                        if (totalTime > 0)
                           Text(
-                            months[index],
+                            '${(totalTime / 60).toInt()}h',
                             style: TextStyle(
-                              fontSize: 9,
-                              color: monthData != null 
-                                  ? Colors.grey.shade600 
-                                  : Colors.grey.shade400,
-                              fontWeight: monthData != null 
-                                  ? FontWeight.normal 
-                                  : FontWeight.w300,
+                              fontSize: 8,
+                              color: Colors.grey.shade500,
                             ),
                           ),
-                          if (totalTime > 0)
-                            Text(
-                              '${(totalTime / 60).toInt()}h',
-                              style: TextStyle(
-                                fontSize: 8,
-                                color: Colors.grey.shade500,
-                              ),
-                            ),
-                        ],
-                      ),
+                      ],
                     ),
-                  );
-                }),
-              ),
+                  ),
+                );
+              }),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -2276,6 +2266,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                         categoryTime,
                         totalTime,
                         _progressAnimation.value,
+                        _categoryColors,
                       ),
                     );
                   },
@@ -2286,7 +2277,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Expanded(
                 child: Column(
                   children: categoryTime.entries.map((entry) {
-                    Color color = _getCategoryColor(entry.key);
+                    Color color = _categoryColors[entry.key] ?? Colors.grey.shade400;
                     double percentage = (entry.value / totalTime) * 100;
                     
                     return Padding(
@@ -2344,62 +2335,49 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   }
 
   Color _getCategoryColor(String category) {
-    // 주요 카테고리들
-    switch (category) {
-      case '프로젝트':
-        return Colors.blue.shade400;
-      case '공부':
-        return Colors.purple.shade400;
-      case '운동':
-        return Colors.green.shade400;
-      case '독서':
-        return Colors.pink.shade400;
-      case '취미':
-        return Colors.teal.shade400;
-      case '업무':
-        return Colors.indigo.shade400;
-      case '요리':
-        return Colors.lime.shade400;
-      case '영화':
-        return Colors.deepPurple.shade400;
-      case '음악':
-        return Colors.cyan.shade400;
-      case '게임':
-        return Colors.amber.shade400;
-      case '쇼핑':
-        return Colors.lightBlue.shade400;
-      case '여행':
-        return Colors.lightGreen.shade400;
-      case '친구':
-        return Colors.brown.shade400;
-      case '가족':
-        return Colors.red.shade400;
-      case '기타':
-        return Colors.grey.shade400;
-      default:
-        // 사용자 정의 카테고리를 위한 해시 기반 색상
-        int hash = category.hashCode;
-        List<Color> colors = [
-          Colors.red.shade400,
-          Colors.pink.shade400,
-          Colors.purple.shade400,
-          Colors.deepPurple.shade400,
-          Colors.indigo.shade400,
-          Colors.blue.shade400,
-          Colors.lightBlue.shade400,
-          Colors.cyan.shade400,
-          Colors.teal.shade400,
-          Colors.green.shade400,
-          Colors.lightGreen.shade400,
-          Colors.lime.shade400,
-          Colors.yellow.shade400,
-          Colors.amber.shade400,
-          Colors.deepOrange.shade400,
-          Colors.brown.shade400,
-          Colors.blueGrey.shade400,
-        ];
-        return colors[hash.abs() % colors.length];
+    // DB에 저장된 색상이 있으면 사용
+    if (_categoryColors.containsKey(category)) {
+      return _categoryColors[category]!;
     }
+
+    // DB에 색상이 없는 경우 기본 색상 로직 사용
+    // 무지개색 배열
+    List<Color> rainbowColors = [
+      Colors.red.shade400,         // 빨강
+      Colors.orange.shade400,      // 주황
+      Colors.yellow.shade600,      // 노랑
+      Colors.green.shade400,       // 초록
+      Colors.blue.shade400,        // 파랑
+      Colors.indigo.shade400,      // 남색
+      Colors.purple.shade400,      // 보라
+      Colors.pink.shade400,        // 분홍
+      Colors.deepOrange.shade400,  // 진한 주황
+      Colors.lightGreen.shade400,  // 연한 초록
+      Colors.cyan.shade400,        // 하늘색
+      Colors.teal.shade400,        // 청록색
+      Colors.deepPurple.shade400,  // 진한 보라
+      Colors.amber.shade400,       // 황금색
+    ];
+
+    // 카테고리 목록을 정렬하여 일관된 순서 유지
+    List<String> orderedCategories = [
+      '프로젝트', '공부', '운동', '독서', '취미', '업무', '요리',
+      '영화', '음악', '게임', '쇼핑', '여행', '친구', '가족', '기타'
+    ];
+
+    // 현재 카테고리의 인덱스 찾기
+    int index = orderedCategories.indexOf(category);
+    if (index == -1) {
+      // 목록에 없는 카테고리는 해시값으로 처리
+      index = category.hashCode.abs() % rainbowColors.length;
+    }
+
+    // 기타 카테고리는 회색으로 처리
+    if (category == '기타') {
+      return Colors.grey.shade400;
+    }
+
+    return rainbowColors[index % rainbowColors.length];
   }
 
   // 시간대별 활동 제목 반환
@@ -2827,14 +2805,35 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       },
     );
   }
+
+  // Firestore에서 카테고리 색상 실시간 감지
+  void _listenToCategoryColors() {
+    _categoryColorsSubscription = _firestoreService.getCategoryColorsStream().listen(
+      (categoryColors) {
+        setState(() {
+          _categoryColors = categoryColors.map(
+            (key, value) => MapEntry(key, Color(value)),
+          );
+        });
+        print('✅ 카테고리 색상 실시간 업데이트: $categoryColors');
+      },
+      onError: (error) {
+        print('❌ 카테고리 색상 스트림 오류: $error');
+        setState(() {
+          _categoryColors = {};
+        });
+      },
+    );
+  }
 }
 
 class DonutChartPainter extends CustomPainter {
   final Map<String, int> data;
   final int total;
   final double animationValue;
+  final Map<String, Color> categoryColors;
 
-  DonutChartPainter(this.data, this.total, this.animationValue);
+  DonutChartPainter(this.data, this.total, this.animationValue, this.categoryColors);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2847,7 +2846,7 @@ class DonutChartPainter extends CustomPainter {
     data.forEach((category, value) {
       final sweepAngle = (value / total) * 2 * math.pi * animationValue;
       final paint = Paint()
-        ..color = _getCategoryColor(category)
+        ..color = categoryColors[category] ?? Colors.grey.shade400
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth
         ..strokeCap = StrokeCap.round;
@@ -2860,67 +2859,8 @@ class DonutChartPainter extends CustomPainter {
         paint,
       );
 
-      startAngle += sweepAngle / animationValue;
+      startAngle += sweepAngle;
     });
-  }
-
-  Color _getCategoryColor(String category) {
-    // 주요 카테고리들 - _StatisticsPageState와 동일한 색상 매핑
-    switch (category) {
-      case '프로젝트':
-        return Colors.blue.shade400;
-      case '공부':
-        return Colors.purple.shade400;
-      case '운동':
-        return Colors.green.shade400;
-      case '독서':
-        return Colors.pink.shade400;
-      case '취미':
-        return Colors.teal.shade400;
-      case '업무':
-        return Colors.indigo.shade400;
-      case '요리':
-        return Colors.lime.shade400;
-      case '영화':
-        return Colors.deepPurple.shade400;
-      case '음악':
-        return Colors.cyan.shade400;
-      case '게임':
-        return Colors.amber.shade400;
-      case '쇼핑':
-        return Colors.lightBlue.shade400;
-      case '여행':
-        return Colors.lightGreen.shade400;
-      case '친구':
-        return Colors.brown.shade400;
-      case '가족':
-        return Colors.red.shade400;
-      case '기타':
-        return Colors.grey.shade400;
-      default:
-        // 사용자 정의 카테고리를 위한 해시 기반 색상
-        int hash = category.hashCode;
-        List<Color> colors = [
-          Colors.red.shade400,
-          Colors.pink.shade400,
-          Colors.purple.shade400,
-          Colors.deepPurple.shade400,
-          Colors.indigo.shade400,
-          Colors.blue.shade400,
-          Colors.lightBlue.shade400,
-          Colors.cyan.shade400,
-          Colors.teal.shade400,
-          Colors.green.shade400,
-          Colors.lightGreen.shade400,
-          Colors.lime.shade400,
-          Colors.yellow.shade400,
-          Colors.amber.shade400,
-          Colors.deepOrange.shade400,
-          Colors.brown.shade400,
-          Colors.blueGrey.shade400,
-        ];
-        return colors[hash.abs() % colors.length];
-    }
   }
 
   @override
