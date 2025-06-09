@@ -136,13 +136,68 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     });
 
     try {
+      // Firebase 연결 상태 확인 및 재시도
+      print('🔥 Firebase 연결 상태 확인 중...');
+      final db = FirebaseFirestore.instance;
+      
+      int retryCount = 0;
+      bool connectionSuccessful = false;
+      
+      while (!connectionSuccessful && retryCount < 3) {
+        try {
+          retryCount++;
+          print('🔄 Firebase 연결 시도 ${retryCount}/3');
+          
+          final testQuery = await db.collection('todos').limit(1).get(
+            const GetOptions(source: Source.server)
+          );
+          
+          print('✅ Firebase 연결 성공 - 문서 개수: ${testQuery.docs.length}');
+          connectionSuccessful = true;
+          
+        } catch (e) {
+          print('❌ Firebase 연결 실패 (${retryCount}/3): $e');
+          if (retryCount < 3) {
+            print('⏳ 2초 후 재시도...');
+            await Future.delayed(const Duration(seconds: 2));
+          }
+        }
+      }
+      
+      if (!connectionSuccessful) {
+        print('💥 Firebase 연결 최종 실패 - 오프라인 모드로 진행');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('서버 연결에 실패했습니다. 오프라인 데이터를 사용합니다.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+      
+      // 스트림 연결 시작
+      print('📡 실시간 스트림 연결 시작...');
       _listenToTodos();
       _listenToCategories();
       _listenToCategoryColors();
       _listenToSelectedCharacter();
       _listenToProfile();
+      
+      print('✅ 모든 스트림 연결 완료');
+      
     } catch (e) {
       print('❌ 데이터 초기화 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('데이터 초기화 중 오류가 발생했습니다: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     } finally {
       setState(() {
         _isDataLoading = false;
@@ -525,16 +580,54 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
 
   // Firestore에서 할일 목록 실시간 구독
   void _listenToTodos() {
+    print('🔄 Firestore 스트림 연결 시작...');
+    
+    _todosSubscription?.cancel(); // 기존 구독 취소
+    
     _todosSubscription = _firestoreService.getTodosStream().listen(
       (todos) {
+        print('📊 Firestore 스트림 데이터 수신: ${todos.length}개 할일');
+        
+        // 완료된 할일의 시간 데이터 확인
+        for (var todo in todos) {
+          if (todo.isCompleted) {
+            print('⏰ 완료된 할일 시간 데이터 - ${todo.title}:');
+            print('  start_time: ${todo.startTime}');
+            print('  stop_time: ${todo.stopTime}');
+            print('  pause_times: ${todo.pauseTimes}');
+            print('  resume_times: ${todo.resumeTimes}');
+          }
+        }
+        
         setState(() {
           _todos = todos;
         });
       },
       onError: (error) {
         print('❌ 할일 목록 구독 오류: $error');
+        print('🔄 3초 후 재연결 시도...');
+        
+        // 3초 후 재연결 시도 (더 빠르게)
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) {
+            print('🔄 Firestore 스트림 재연결 시도');
+            _listenToTodos();
+          }
+        });
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('할일 목록을 불러오는데 실패했습니다: $error')),
+          SnackBar(
+            content: Text('할일 목록을 불러오는데 실패했습니다. 재연결 중...'),
+            backgroundColor: Colors.orange,
+            action: SnackBarAction(
+              label: '수동 재연결',
+              textColor: Colors.white,
+              onPressed: () {
+                print('🔄 수동 재연결 시도');
+                _listenToTodos();
+              },
+            ),
+          ),
         );
       },
     );
@@ -1296,24 +1389,61 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   softWrap: true, // 자동 줄바꿈
                 ),
                 const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: _getPriorityColor(todo.priority).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _getPriorityText(todo.priority),
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: _getPriorityColor(todo.priority),
-                        fontWeight: FontWeight.w500,
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _getPriorityColor(todo.priority).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _getPriorityText(todo.priority),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: _getPriorityColor(todo.priority),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  ),
+                    // 완료된 할일에 시간 정보 표시
+                    if (todo.isCompleted && _hasTimeData(todo)) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.shade200, width: 0.5),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.access_time,
+                              size: 10,
+                              color: Colors.green.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _calculateWorkingTime(todo),
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+                // 완료된 할일에 상세 시간 타임라인 표시 (할일 카드 내부)
+                if (todo.isCompleted && _hasTimeData(todo)) ...[
+                  const SizedBox(height: 8),
+                  _buildTimeVisualization(todo),
+                ],
               ],
             ),
           ),
@@ -1371,6 +1501,12 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     // 기본 색상 (블루그레이) - Firestore의 기본값과 일치
     return Colors.blueGrey.shade600;
   }
+
+
+
+
+
+
 
   void _showAddTodoDialogForCategory(String category) {
     _selectedCategory = category;
@@ -1674,6 +1810,51 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         elevation: 0,
         centerTitle: true,
         actions: [
+          // 새로고침 버튼 추가
+          IconButton(
+            onPressed: () async {
+              print('🔄 수동 새로고침 시작 - 모든 스트림 재연결');
+              
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('모든 데이터를 새로고침하고 있습니다...'),
+                  duration: Duration(seconds: 2),
+                  backgroundColor: Colors.blue,
+                ),
+              );
+              
+              // 모든 스트림 재연결
+              _todosSubscription?.cancel();
+              _categoriesSubscription?.cancel();
+              _categoryColorsSubscription?.cancel();
+              _selectedCharacterSubscription?.cancel();
+              _profileSubscription?.cancel();
+              
+              // 약간의 지연 후 재연결
+              await Future.delayed(const Duration(milliseconds: 500));
+              
+              if (mounted) {
+                _listenToTodos();
+                _listenToCategories();
+                _listenToCategoryColors();
+                _listenToSelectedCharacter();
+                _listenToProfile();
+                
+                print('✅ 모든 스트림 재연결 완료');
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('새로고침 완료!'),
+                    duration: Duration(seconds: 1),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.refresh),
+            color: Colors.black,
+            tooltip: '새로고침',
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: _buildProfileIcon(),
@@ -2616,6 +2797,312 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     if (result == true) {
       print('🔄 캐릭터 변경됨! 실시간 업데이트될 예정...');
       // 실시간 스트림이 자동으로 업데이트하므로 별도 로딩 불필요
+    }
+  }
+
+  // 시간 데이터가 있는지 확인
+  bool _hasTimeData(TodoItem todo) {
+    return todo.startTime != null || 
+           todo.stopTime != null ||
+           (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty) ||
+           (todo.resumeTimes != null && todo.resumeTimes!.isNotEmpty);
+  }
+
+  // 총 작업 시간 계산
+  String _calculateWorkingTime(TodoItem todo) {
+    try {
+      if (!_hasTimeData(todo)) return '0분';
+
+      DateTime? startTime;
+      DateTime? endTime;
+      
+      // 시작 시간 파싱
+      if (todo.startTime != null) {
+        startTime = _parseTime(todo.startTime!);
+      }
+
+      // 종료 시간 결정 로직 (최종 수정)
+      if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && 
+          todo.resumeTimes != null && todo.resumeTimes!.isNotEmpty) {
+        int pauseCount = todo.pauseTimes!.length;
+        int resumeCount = todo.resumeTimes!.length;
+        
+        print('📊 시간 계산: pause=$pauseCount, resume=$resumeCount');
+        
+        if (pauseCount != resumeCount) {
+          // 길이가 다르면 매칭되지 않은 pause_times의 마지막이 완료시간
+          endTime = _parseTime(todo.pauseTimes!.last);
+          print('📊 완료 시간: pause_times 마지막 (${todo.pauseTimes!.last})');
+        } else {
+          // 길이가 같으면 stop_time이 완료시간
+          if (todo.stopTime != null) {
+            endTime = _parseTime(todo.stopTime!);
+            print('📊 완료 시간: stop_time (${todo.stopTime})');
+          }
+        }
+      } else if (todo.stopTime != null) {
+        // pause/resume 데이터가 없으면 stop_time 사용
+        endTime = _parseTime(todo.stopTime!);
+        print('📊 완료 시간: stop_time (pause/resume 없음)');
+      }
+
+      if (startTime == null || endTime == null) return '0분';
+
+      // 총 시간에서 일시정지 시간 제외
+      int totalMinutes = endTime.difference(startTime).inMinutes;
+      int pausedMinutes = _calculatePausedTime(todo);
+      
+      int workingMinutes = totalMinutes - pausedMinutes;
+      workingMinutes = workingMinutes < 0 ? 0 : workingMinutes; // 음수 방지
+      
+      if (workingMinutes < 60) {
+        return '${workingMinutes}분';
+      } else {
+        int hours = workingMinutes ~/ 60;
+        int minutes = workingMinutes % 60;
+        return '${hours}시간 ${minutes}분';
+      }
+    } catch (e) {
+      return '0분';
+    }
+  }
+
+  // 일시정지 시간 계산 (인덱스별 매칭)
+  int _calculatePausedTime(TodoItem todo) {
+    if (todo.pauseTimes == null || todo.pauseTimes!.isEmpty) return 0;
+    if (todo.resumeTimes == null || todo.resumeTimes!.isEmpty) return 0;
+    
+    int pausedMinutes = 0;
+    int pauseCount = todo.pauseTimes!.length;
+    int resumeCount = todo.resumeTimes!.length;
+    
+    // 인덱스별로 매칭 가능한 개수 (작은 수만큼)
+    int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
+    
+    print('⏸️ 쉬는 시간 계산: pause=$pauseCount, resume=$resumeCount, 매칭=$pairCount');
+    
+    // 인덱스별로 매칭된 쉬는 시간들 계산
+    for (int i = 0; i < pairCount; i++) {
+      try {
+        DateTime pauseTime = _parseTime(todo.pauseTimes![i]);
+        DateTime resumeTime = _parseTime(todo.resumeTimes![i]);
+        int restMinutes = resumeTime.difference(pauseTime).inMinutes;
+        if (restMinutes > 0) { // 양수인 경우만 추가
+          pausedMinutes += restMinutes;
+          print('  쉬는 시간 ${i + 1}: ${todo.pauseTimes![i]} ~ ${todo.resumeTimes![i]} = ${restMinutes}분');
+        }
+      } catch (e) {
+        print('  쉬는 시간 ${i + 1} 계산 오류: $e');
+      }
+    }
+    
+    print('총 쉬는 시간: ${pausedMinutes}분');
+    return pausedMinutes;
+  }
+
+  // 시간 문자열 파싱
+  DateTime _parseTime(String timeString) {
+    final today = DateTime.now();
+    final parts = timeString.split(':');
+    return DateTime(
+      today.year, 
+      today.month, 
+      today.day,
+      int.parse(parts[0]),
+      int.parse(parts[1]),
+      parts.length > 2 ? int.parse(parts[2]) : 0,
+    );
+  }
+
+  // 시간 시각화 위젯
+  Widget _buildTimeVisualization(TodoItem todo) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.schedule, size: 12, color: Colors.grey.shade600),
+              const SizedBox(width: 4),
+              Text(
+                '작업 타임라인',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildTimeline(todo),
+        ],
+      ),
+    );
+  }
+
+  // 타임라인 구성
+  Widget _buildTimeline(TodoItem todo) {
+    List<Widget> timelineItems = [];
+    
+    print('📅 타임라인 구성 - ${todo.title}:');
+    print('  start_time: ${todo.startTime}');
+    print('  stop_time: ${todo.stopTime}');
+    print('  pause_times: ${todo.pauseTimes} (${todo.pauseTimes?.length ?? 0}개)');
+    print('  resume_times: ${todo.resumeTimes} (${todo.resumeTimes?.length ?? 0}개)');
+    
+    // 1. 시작 시간
+    if (todo.startTime != null) {
+      timelineItems.add(_buildTimelineItem(
+        '시작', 
+        todo.startTime!, 
+        Colors.green,
+        Icons.play_arrow,
+      ));
+    }
+
+    // 2. 쉬는 시간 처리 (인덱스별 매칭)
+    if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && 
+        todo.resumeTimes != null && todo.resumeTimes!.isNotEmpty) {
+      int pauseCount = todo.pauseTimes!.length;
+      int resumeCount = todo.resumeTimes!.length;
+      
+      print('  매칭 분석: pause=$pauseCount, resume=$resumeCount');
+      
+      // 인덱스별로 매칭 가능한 쉬는 시간들 표시
+      int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
+      
+      for (int i = 0; i < pairCount; i++) {
+        String pauseTime = todo.pauseTimes![i];
+        String resumeTime = todo.resumeTimes![i];
+        timelineItems.add(_buildRestTimeItem(pauseTime, resumeTime));
+        print('    쉬는 시간 ${i + 1}: $pauseTime ~ $resumeTime');
+      }
+    }
+
+    // 3. 완료 시간 결정 및 표시 (최종 수정)
+    String? endTime;
+    String endLabel = '완료';
+    
+    if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && 
+        todo.resumeTimes != null && todo.resumeTimes!.isNotEmpty) {
+      int pauseCount = todo.pauseTimes!.length;
+      int resumeCount = todo.resumeTimes!.length;
+      
+      if (pauseCount != resumeCount) {
+        // 길이가 다르면 매칭되지 않은 pause_times의 마지막이 완료시간
+        endTime = todo.pauseTimes!.last;
+        endLabel = '완료';
+        print('  완료 시간: pause_times 마지막 ($endTime)');
+      } else {
+        // 길이가 같으면 stop_time이 완료시간
+        if (todo.stopTime != null) {
+          endTime = todo.stopTime!;
+          endLabel = '완료';
+          print('  완료 시간: stop_time ($endTime)');
+        }
+      }
+    } else if (todo.stopTime != null) {
+      // pause/resume 데이터가 없으면 stop_time 사용
+      endTime = todo.stopTime!;
+      endLabel = '완료';
+      print('  완료 시간: stop_time (pause/resume 없음)');
+    }
+
+    if (endTime != null) {
+      timelineItems.add(_buildTimelineItem(
+        endLabel, 
+        endTime, 
+        Colors.red,
+        Icons.stop,
+      ));
+    }
+
+    return Column(children: timelineItems);
+  }
+
+  // 타임라인 아이템
+  Widget _buildTimelineItem(String label, String time, Color color, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: color, width: 1),
+            ),
+            child: Icon(icon, size: 10, color: color),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '$label: $time',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 쉬는 시간 아이템 (범위 + 시간 계산)
+  Widget _buildRestTimeItem(String startTime, String endTime) {
+    String duration = _calculateRestDuration(startTime, endTime);
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange, width: 1),
+            ),
+            child: Icon(Icons.coffee, size: 10, color: Colors.orange),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '쉬는 시간: $startTime ~ $endTime ($duration)',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 쉬는 시간 계산
+  String _calculateRestDuration(String startTime, String endTime) {
+    try {
+      DateTime start = _parseTime(startTime);
+      DateTime end = _parseTime(endTime);
+      int minutes = end.difference(start).inMinutes;
+      
+      if (minutes < 60) {
+        return '${minutes}분';
+      } else {
+        int hours = minutes ~/ 60;
+        int remainingMinutes = minutes % 60;
+        return '${hours}시간 ${remainingMinutes}분';
+      }
+    } catch (e) {
+      return '?분';
     }
   }
 } 

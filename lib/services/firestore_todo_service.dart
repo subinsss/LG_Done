@@ -10,6 +10,12 @@ class TodoItem {
   final String userId;
   final String category;
   final int order; // 순서 필드 추가
+  
+  // 시간 관련 필드들 추가
+  final String? startTime;
+  final String? stopTime;
+  final List<String>? pauseTimes;
+  final List<String>? resumeTimes;
 
   TodoItem({
     required this.id,
@@ -20,6 +26,10 @@ class TodoItem {
     required this.userId,
     required this.category,
     this.order = 0, // 기본값 0
+    this.startTime,
+    this.stopTime,
+    this.pauseTimes,
+    this.resumeTimes,
   });
 
   factory TodoItem.fromFirestore(DocumentSnapshot doc) {
@@ -52,6 +62,63 @@ class TodoItem {
     // 기존 isCompleted와 새로운 is_completed 모두 지원
     bool completed = data['is_completed'] ?? data['isCompleted'] ?? false;
     
+    // 시간 필드들 읽기
+    List<String>? pauseTimes;
+    List<String>? resumeTimes;
+    
+    // 시간 데이터 파싱
+    if (data['pause_times'] != null) {
+      if (data['pause_times'] is List) {
+        pauseTimes = List<String>.from(data['pause_times']);
+      } else if (data['pause_times'] is String) {
+        String pauseStr = data['pause_times'];
+        // String 안의 리스트 형태 파싱 (예: "['11:06:38','11:06:47']")
+        if (pauseStr.startsWith('[') && pauseStr.endsWith(']')) {
+          try {
+            // 대괄호 제거하고 쉼표로 분리
+            String cleanStr = pauseStr.substring(1, pauseStr.length - 1);
+            pauseTimes = cleanStr
+                .split(',')
+                .map((s) => s.trim().replaceAll("'", "").replaceAll('"', ''))
+                .where((s) => s.isNotEmpty)
+                .toList();
+            print('📊 pause_times 파싱: $pauseStr -> $pauseTimes');
+          } catch (e) {
+            print('❌ pause_times 파싱 오류: $e');
+            pauseTimes = [pauseStr]; // 파싱 실패 시 원본 사용
+          }
+        } else {
+          pauseTimes = [pauseStr]; // 단일 값
+        }
+      }
+    }
+    
+    if (data['resume_times'] != null) {
+      if (data['resume_times'] is List) {
+        resumeTimes = List<String>.from(data['resume_times']);
+      } else if (data['resume_times'] is String) {
+        String resumeStr = data['resume_times'];
+        // String 안의 리스트 형태 파싱 (예: "['11:06:42']")
+        if (resumeStr.startsWith('[') && resumeStr.endsWith(']')) {
+          try {
+            // 대괄호 제거하고 쉼표로 분리
+            String cleanStr = resumeStr.substring(1, resumeStr.length - 1);
+            resumeTimes = cleanStr
+                .split(',')
+                .map((s) => s.trim().replaceAll("'", "").replaceAll('"', ''))
+                .where((s) => s.isNotEmpty)
+                .toList();
+            print('📊 resume_times 파싱: $resumeStr -> $resumeTimes');
+          } catch (e) {
+            print('❌ resume_times 파싱 오류: $e');
+            resumeTimes = [resumeStr]; // 파싱 실패 시 원본 사용
+          }
+        } else {
+          resumeTimes = [resumeStr]; // 단일 값
+        }
+      }
+    }
+    
     return TodoItem(
       id: doc.id,
       title: data['title'] ?? '',
@@ -61,6 +128,10 @@ class TodoItem {
       userId: data['userId'] ?? 'anonymous',
       category: data['category'] ?? '',
       order: data['order'] ?? 0,
+      startTime: data['start_time'],
+      stopTime: data['stop_time'],
+      pauseTimes: pauseTimes,
+      resumeTimes: resumeTimes,
     );
   }
 
@@ -150,17 +221,27 @@ class FirestoreTodoService {
     return _firestore!
         .collection(_collection)
         .where('userId', isEqualTo: _userId)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true) // 메타데이터 변경도 포함
         .handleError((error) {
           print('❌ Firestore 스트림 오류: $error');
           print('❌ 오류 타입: ${error.runtimeType}');
+          print('❌ 상세 정보: ${error.toString()}');
+          
           if (error.toString().contains('indexes')) {
             print('💡 해결방법: Firebase Console에서 복합 인덱스를 생성해야 합니다.');
+          } else if (error.toString().contains('permission')) {
+            print('💡 해결방법: Firestore 보안 규칙을 확인해주세요.');
+          } else if (error.toString().contains('network') || error.toString().contains('connection')) {
+            print('💡 해결방법: 네트워크 연결을 확인해주세요.');
           }
+          
+          // 에러를 다시 던져서 상위에서 처리할 수 있게 함
           throw error;
         })
         .map((snapshot) {
       print('📊 전체 문서 개수: ${snapshot.docs.length}');
+      print('📊 메타데이터 - hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
+      print('📊 메타데이터 - isFromCache: ${snapshot.metadata.isFromCache}');
       
       final todos = snapshot.docs.map((doc) {
         try {
