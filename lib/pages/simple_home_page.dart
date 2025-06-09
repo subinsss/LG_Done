@@ -39,7 +39,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   
   // 달력 관련 추가
   DateTime _focusedDay = DateTime.now();
-  DateTime _selectedDay = DateTime.now();
+  DateTime _selectedDay = DateTime.now(); // 오늘 날짜로 고정
   bool _isCalendarExpanded = false;
 
   // 할일 추가 컨트롤러
@@ -580,52 +580,35 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
 
   // Firestore에서 할일 목록 실시간 구독
   void _listenToTodos() {
-    print('🔄 Firestore 스트림 연결 시작...');
+    print('🔄 Firebase 연결 중...');
     
-    _todosSubscription?.cancel(); // 기존 구독 취소
+    _todosSubscription?.cancel();
     
     _todosSubscription = _firestoreService.getTodosStream().listen(
       (todos) {
-        print('📊 Firestore 스트림 데이터 수신: ${todos.length}개 할일');
-        
-        // 완료된 할일의 시간 데이터 확인
-        for (var todo in todos) {
-          if (todo.isCompleted) {
-            print('⏰ 완료된 할일 시간 데이터 - ${todo.title}:');
-            print('  start_time: ${todo.startTime}');
-            print('  stop_time: ${todo.stopTime}');
-            print('  pause_times: ${todo.pauseTimes}');
-            print('  resume_times: ${todo.resumeTimes}');
-          }
-        }
+        print('✅ 데이터 수신: ${todos.length}개 할일');
         
         setState(() {
           _todos = todos;
         });
       },
       onError: (error) {
-        print('❌ 할일 목록 구독 오류: $error');
-        print('🔄 3초 후 재연결 시도...');
+        print('❌ 연결 오류: $error');
         
-        // 3초 후 재연결 시도 (더 빠르게)
-        Future.delayed(const Duration(seconds: 3), () {
+        Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) {
-            print('🔄 Firestore 스트림 재연결 시도');
             _listenToTodos();
           }
         });
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('할일 목록을 불러오는데 실패했습니다. 재연결 중...'),
-            backgroundColor: Colors.orange,
+            content: Text('연결 오류 발생. 재연결 중...'),
+            backgroundColor: Colors.red,
             action: SnackBarAction(
-              label: '수동 재연결',
+              label: '재연결',
               textColor: Colors.white,
-              onPressed: () {
-                print('🔄 수동 재연결 시도');
-                _listenToTodos();
-              },
+              onPressed: () => _listenToTodos(),
             ),
           ),
         );
@@ -1071,12 +1054,9 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   }
 
   Widget _buildTodoList() {
-    // 선택한 날짜의 할일만 필터링
-    final selectedDateTodos = _todos.where((todo) {
-      if (todo.dueDate == null) return false;
-      return isSameDay(todo.dueDate!, _selectedDay);
-    }).toList();
-
+    // Firebase에서 이미 오늘 날짜로 필터링된 할일들
+    final todayTodos = _todos;
+    
     // 카테고리가 없으면 안내 메시지 표시
     if (_categories.isEmpty) {
       return Container(
@@ -1084,10 +1064,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-              color: Colors.grey.shade200,
-              width: 1,
-            ),
+          border: Border.all(
+            color: Colors.grey.shade200,
+            width: 1,
+          ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1135,10 +1115,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       );
     }
 
-    // 모든 카테고리를 표시하되, 각 카테고리별로 선택한 날짜의 할일만 필터링
+    // 카테고리별로 오늘 할일을 그룹화하여 표시
     return Column(
       children: _categories.map((category) {
-        final categoryTodos = selectedDateTodos
+        final categoryTodos = todayTodos
             .where((todo) => todo.category == category)
             .toList();
         
@@ -1224,7 +1204,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   padding: const EdgeInsets.all(20),
                   child: Center(
                     child: Text(
-                      '${DateFormat('M월 d일').format(_selectedDay)}에 이 카테고리의 할일이 없습니다',
+                      '오늘 이 카테고리의 할일이 없습니다',
                       style: TextStyle(
                         color: Colors.grey.shade400,
                         fontSize: 14,
@@ -1943,10 +1923,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '${_todos.where((todo) {
-                            if (todo.dueDate == null) return false;
-                            return isSameDay(todo.dueDate!, _selectedDay);
-                          }).length}개의 할일',
+                          '${_todos.length}개의 오늘 할일',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -2816,44 +2793,37 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       DateTime? startTime;
       DateTime? endTime;
       
-      // 시작 시간 파싱
       if (todo.startTime != null) {
         startTime = _parseTime(todo.startTime!);
       }
 
-      // 종료 시간 결정 로직 (최종 수정)
-      if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && 
-          todo.resumeTimes != null && todo.resumeTimes!.isNotEmpty) {
+      // 종료 시간 결정
+      bool hasValidResumeData = todo.resumeTimes != null && 
+                                todo.resumeTimes!.isNotEmpty && 
+                                todo.resumeTimes!.length > 0;
+      
+      if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && hasValidResumeData) {
         int pauseCount = todo.pauseTimes!.length;
         int resumeCount = todo.resumeTimes!.length;
         
-        print('📊 시간 계산: pause=$pauseCount, resume=$resumeCount');
-        
         if (pauseCount != resumeCount) {
-          // 길이가 다르면 매칭되지 않은 pause_times의 마지막이 완료시간
           endTime = _parseTime(todo.pauseTimes!.last);
-          print('📊 완료 시간: pause_times 마지막 (${todo.pauseTimes!.last})');
         } else {
-          // 길이가 같으면 stop_time이 완료시간
           if (todo.stopTime != null) {
             endTime = _parseTime(todo.stopTime!);
-            print('📊 완료 시간: stop_time (${todo.stopTime})');
           }
         }
       } else if (todo.stopTime != null) {
-        // pause/resume 데이터가 없으면 stop_time 사용
         endTime = _parseTime(todo.stopTime!);
-        print('📊 완료 시간: stop_time (pause/resume 없음)');
       }
 
       if (startTime == null || endTime == null) return '0분';
 
-      // 총 시간에서 일시정지 시간 제외
       int totalMinutes = endTime.difference(startTime).inMinutes;
       int pausedMinutes = _calculatePausedTime(todo);
       
       int workingMinutes = totalMinutes - pausedMinutes;
-      workingMinutes = workingMinutes < 0 ? 0 : workingMinutes; // 음수 방지
+      workingMinutes = workingMinutes < 0 ? 0 : workingMinutes;
       
       if (workingMinutes < 60) {
         return '${workingMinutes}분';
@@ -2867,36 +2837,36 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     }
   }
 
-  // 일시정지 시간 계산 (인덱스별 매칭)
+  // 일시정지 시간 계산
   int _calculatePausedTime(TodoItem todo) {
     if (todo.pauseTimes == null || todo.pauseTimes!.isEmpty) return 0;
-    if (todo.resumeTimes == null || todo.resumeTimes!.isEmpty) return 0;
+    
+    bool hasValidResumeData = todo.resumeTimes != null && 
+                              todo.resumeTimes!.isNotEmpty && 
+                              todo.resumeTimes!.length > 0;
+    
+    if (!hasValidResumeData) {
+      return 0;
+    }
     
     int pausedMinutes = 0;
     int pauseCount = todo.pauseTimes!.length;
     int resumeCount = todo.resumeTimes!.length;
-    
-    // 인덱스별로 매칭 가능한 개수 (작은 수만큼)
     int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
     
-    print('⏸️ 쉬는 시간 계산: pause=$pauseCount, resume=$resumeCount, 매칭=$pairCount');
-    
-    // 인덱스별로 매칭된 쉬는 시간들 계산
     for (int i = 0; i < pairCount; i++) {
       try {
         DateTime pauseTime = _parseTime(todo.pauseTimes![i]);
         DateTime resumeTime = _parseTime(todo.resumeTimes![i]);
         int restMinutes = resumeTime.difference(pauseTime).inMinutes;
-        if (restMinutes > 0) { // 양수인 경우만 추가
+        if (restMinutes > 0) {
           pausedMinutes += restMinutes;
-          print('  쉬는 시간 ${i + 1}: ${todo.pauseTimes![i]} ~ ${todo.resumeTimes![i]} = ${restMinutes}분');
         }
       } catch (e) {
-        print('  쉬는 시간 ${i + 1} 계산 오류: $e');
+        // 무시
       }
     }
     
-    print('총 쉬는 시간: ${pausedMinutes}분');
     return pausedMinutes;
   }
 
@@ -2951,12 +2921,6 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   Widget _buildTimeline(TodoItem todo) {
     List<Widget> timelineItems = [];
     
-    print('📅 타임라인 구성 - ${todo.title}:');
-    print('  start_time: ${todo.startTime}');
-    print('  stop_time: ${todo.stopTime}');
-    print('  pause_times: ${todo.pauseTimes} (${todo.pauseTimes?.length ?? 0}개)');
-    print('  resume_times: ${todo.resumeTimes} (${todo.resumeTimes?.length ?? 0}개)');
-    
     // 1. 시작 시간
     if (todo.startTime != null) {
       timelineItems.add(_buildTimelineItem(
@@ -2967,52 +2931,43 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       ));
     }
 
-    // 2. 쉬는 시간 처리 (인덱스별 매칭)
-    if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && 
-        todo.resumeTimes != null && todo.resumeTimes!.isNotEmpty) {
+    // 2. 쉬는 시간 처리
+    bool hasValidResumeData = todo.resumeTimes != null && 
+                              todo.resumeTimes!.isNotEmpty && 
+                              todo.resumeTimes!.length > 0;
+    
+    if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && hasValidResumeData) {
       int pauseCount = todo.pauseTimes!.length;
       int resumeCount = todo.resumeTimes!.length;
-      
-      print('  매칭 분석: pause=$pauseCount, resume=$resumeCount');
-      
-      // 인덱스별로 매칭 가능한 쉬는 시간들 표시
       int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
       
       for (int i = 0; i < pairCount; i++) {
         String pauseTime = todo.pauseTimes![i];
         String resumeTime = todo.resumeTimes![i];
         timelineItems.add(_buildRestTimeItem(pauseTime, resumeTime));
-        print('    쉬는 시간 ${i + 1}: $pauseTime ~ $resumeTime');
       }
     }
 
-    // 3. 완료 시간 결정 및 표시 (최종 수정)
+    // 3. 완료 시간 결정
     String? endTime;
     String endLabel = '완료';
     
-    if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && 
-        todo.resumeTimes != null && todo.resumeTimes!.isNotEmpty) {
+    if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && hasValidResumeData) {
       int pauseCount = todo.pauseTimes!.length;
       int resumeCount = todo.resumeTimes!.length;
       
       if (pauseCount != resumeCount) {
-        // 길이가 다르면 매칭되지 않은 pause_times의 마지막이 완료시간
         endTime = todo.pauseTimes!.last;
         endLabel = '완료';
-        print('  완료 시간: pause_times 마지막 ($endTime)');
       } else {
-        // 길이가 같으면 stop_time이 완료시간
         if (todo.stopTime != null) {
           endTime = todo.stopTime!;
           endLabel = '완료';
-          print('  완료 시간: stop_time ($endTime)');
         }
       }
     } else if (todo.stopTime != null) {
-      // pause/resume 데이터가 없으면 stop_time 사용
       endTime = todo.stopTime!;
       endLabel = '완료';
-      print('  완료 시간: stop_time (pause/resume 없음)');
     }
 
     if (endTime != null) {
@@ -3056,7 +3011,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     );
   }
 
-  // 쉬는 시간 아이템 (범위 + 시간 계산)
+  // 쉬는 시간 아이템
   Widget _buildRestTimeItem(String startTime, String endTime) {
     String duration = _calculateRestDuration(startTime, endTime);
     

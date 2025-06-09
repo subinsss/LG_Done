@@ -66,56 +66,69 @@ class TodoItem {
     List<String>? pauseTimes;
     List<String>? resumeTimes;
     
-    // 시간 데이터 파싱
+    // 시간 데이터 파싱 (핵심 로그만)
     if (data['pause_times'] != null) {
-      if (data['pause_times'] is List) {
-        pauseTimes = List<String>.from(data['pause_times']);
-      } else if (data['pause_times'] is String) {
-        String pauseStr = data['pause_times'];
-        // String 안의 리스트 형태 파싱 (예: "['11:06:38','11:06:47']")
-        if (pauseStr.startsWith('[') && pauseStr.endsWith(']')) {
-          try {
-            // 대괄호 제거하고 쉼표로 분리
-            String cleanStr = pauseStr.substring(1, pauseStr.length - 1);
-            pauseTimes = cleanStr
-                .split(',')
-                .map((s) => s.trim().replaceAll("'", "").replaceAll('"', ''))
-                .where((s) => s.isNotEmpty)
-                .toList();
-            print('📊 pause_times 파싱: $pauseStr -> $pauseTimes');
-          } catch (e) {
-            print('❌ pause_times 파싱 오류: $e');
-            pauseTimes = [pauseStr]; // 파싱 실패 시 원본 사용
+      try {
+        if (data['pause_times'] is List) {
+          pauseTimes = List<String>.from(data['pause_times']);
+        } else if (data['pause_times'] is String) {
+          String pauseStr = data['pause_times'];
+          
+          if (pauseStr.startsWith('[') && pauseStr.endsWith(']')) {
+            try {
+              String cleanStr = pauseStr.substring(1, pauseStr.length - 1).trim();
+              
+              if (cleanStr.isEmpty) {
+                pauseTimes = [];
+              } else {
+                pauseTimes = cleanStr
+                    .split(',')
+                    .map((s) => s.trim().replaceAll("'", "").replaceAll('"', ''))
+                    .where((s) => s.isNotEmpty)
+                    .toList();
+              }
+            } catch (e) {
+              pauseTimes = null;
+            }
+          } else {
+            pauseTimes = [pauseStr];
           }
-        } else {
-          pauseTimes = [pauseStr]; // 단일 값
         }
+      } catch (e) {
+        pauseTimes = null;
       }
     }
     
     if (data['resume_times'] != null) {
-      if (data['resume_times'] is List) {
-        resumeTimes = List<String>.from(data['resume_times']);
-      } else if (data['resume_times'] is String) {
-        String resumeStr = data['resume_times'];
-        // String 안의 리스트 형태 파싱 (예: "['11:06:42']")
-        if (resumeStr.startsWith('[') && resumeStr.endsWith(']')) {
-          try {
-            // 대괄호 제거하고 쉼표로 분리
-            String cleanStr = resumeStr.substring(1, resumeStr.length - 1);
-            resumeTimes = cleanStr
-                .split(',')
-                .map((s) => s.trim().replaceAll("'", "").replaceAll('"', ''))
-                .where((s) => s.isNotEmpty)
-                .toList();
-            print('📊 resume_times 파싱: $resumeStr -> $resumeTimes');
-          } catch (e) {
-            print('❌ resume_times 파싱 오류: $e');
-            resumeTimes = [resumeStr]; // 파싱 실패 시 원본 사용
+      try {
+        if (data['resume_times'] is List) {
+          resumeTimes = List<String>.from(data['resume_times']);
+        } else if (data['resume_times'] is String) {
+          String resumeStr = data['resume_times'];
+          
+          if (resumeStr.startsWith('[') && resumeStr.endsWith(']')) {
+            try {
+              String cleanStr = resumeStr.substring(1, resumeStr.length - 1).trim();
+              
+              if (cleanStr.isEmpty) {
+                resumeTimes = [];
+                print('📊 ${data['title']}: resume_times 빈 배열');
+              } else {
+                resumeTimes = cleanStr
+                    .split(',')
+                    .map((s) => s.trim().replaceAll("'", "").replaceAll('"', ''))
+                    .where((s) => s.isNotEmpty)
+                    .toList();
+              }
+            } catch (e) {
+              resumeTimes = null;
+            }
+          } else {
+            resumeTimes = [resumeStr];
           }
-        } else {
-          resumeTimes = [resumeStr]; // 단일 값
         }
+      } catch (e) {
+        resumeTimes = null;
       }
     }
     
@@ -214,14 +227,21 @@ class FirestoreTodoService {
     }
   }
 
-  // 할일 목록 실시간 스트림
+  // 할일 목록 실시간 스트림 (오늘 날짜 기준)
   Stream<List<TodoItem>> getTodosStream() {
     print('🔄 Firestore 스트림 시작...');
+    
+    // 오늘 날짜 계산
+    final today = DateTime.now();
+    final todayString = DateFormat('yyyy-MM-dd').format(DateTime(today.year, today.month, today.day));
+    
+    print('📅 오늘 날짜 필터: $todayString');
     
     return _firestore!
         .collection(_collection)
         .where('userId', isEqualTo: _userId)
-        .snapshots(includeMetadataChanges: true) // 메타데이터 변경도 포함
+        .where('due_date_string', isEqualTo: todayString) // 오늘 날짜만 가져오기
+        .snapshots(includeMetadataChanges: true)
         .handleError((error) {
           print('❌ Firestore 스트림 오류: $error');
           print('❌ 오류 타입: ${error.runtimeType}');
@@ -235,32 +255,24 @@ class FirestoreTodoService {
             print('💡 해결방법: 네트워크 연결을 확인해주세요.');
           }
           
-          // 에러를 다시 던져서 상위에서 처리할 수 있게 함
           throw error;
         })
         .map((snapshot) {
-      print('📊 전체 문서 개수: ${snapshot.docs.length}');
+      print('📊 오늘 할일 개수: ${snapshot.docs.length}');
       print('📊 메타데이터 - hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
       print('📊 메타데이터 - isFromCache: ${snapshot.metadata.isFromCache}');
       
       final todos = snapshot.docs.map((doc) {
         try {
-          print('📄 문서 데이터: ${doc.data()}');
           return TodoItem.fromFirestore(doc);
         } catch (e) {
           print('❌ 문서 파싱 오류: $e');
           print('❌ 문서 ID: ${doc.id}');
-          print('❌ 문서 데이터: ${doc.data()}');
           rethrow;
         }
       }).toList();
       
-      print('✅ 필터링된 할일 개수: ${todos.length}');
-      print('📦 Firestore에서 받은 할일 개수: ${todos.length}');
-      
-      for (var todo in todos) {
-        print('📝 할일: ${todo.title} (완료: ${todo.isCompleted})');
-      }
+      print('✅ 오늘 할일 처리 완료: ${todos.length}개');
       
       return todos;
     });

@@ -40,7 +40,7 @@ class _SignUpPageState extends State<SignUpPage> {
               ListView(
                 children: [
                   Image.asset(
-                    'assets/ThinQ_logo.png',
+                    'assets/done_logo.png',
                     width: 200,
                   ),
                   Container(height: 26),
