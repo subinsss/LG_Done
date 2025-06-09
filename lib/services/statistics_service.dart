@@ -943,22 +943,52 @@ class StatisticsService {
 // 일일 통계 데이터 모델
 class DailyStats {
   final DateTime date;
-  final int studyTimeMinutes;
-  final int completedTasks;
-  final int totalTasks;
-  final Map<String, int> categoryTime;
-  final List<String> achievements;
-  final Map<int, int> hourlyActivity; // 시간대별 활동 (시간: 분)
+  int studyTimeMinutes;
+  int completedTasks;
+  int totalTasks;
+  Map<String, int> categoryTime;
+  Map<int, int> hourlyActivity;
+  List<String> achievements;
 
   DailyStats({
     required this.date,
-    required this.studyTimeMinutes,
-    required this.completedTasks,
-    required this.totalTasks,
+    this.studyTimeMinutes = 0,
+    this.completedTasks = 0,
+    this.totalTasks = 0,
     required this.categoryTime,
-    required this.achievements,
     this.hourlyActivity = const {},
+    this.achievements = const [],
   });
+
+  // 빈 데이터 생성
+  factory DailyStats.empty(DateTime date) {
+    return DailyStats(
+      date: date,
+      studyTimeMinutes: 0,
+      completedTasks: 0,
+      totalTasks: 0,
+      categoryTime: {},
+      hourlyActivity: {},
+      achievements: [],
+    );
+  }
+
+  // 값 업데이트 메서드
+  void updateValues({
+    int? studyTime,
+    int? completed,
+    int? total,
+    Map<String, int>? category,
+    Map<int, int>? hourly,
+    List<String>? achieve,
+  }) {
+    if (studyTime != null) studyTimeMinutes = studyTime;
+    if (completed != null) completedTasks = completed;
+    if (total != null) totalTasks = total;
+    if (category != null) categoryTime = category;
+    if (hourly != null) hourlyActivity = hourly;
+    if (achieve != null) achievements = achieve;
+  }
 
   factory DailyStats.fromJson(Map<String, dynamic> json) {
     return DailyStats(
@@ -982,18 +1012,6 @@ class DailyStats {
       'achievements': achievements,
       'hourlyActivity': hourlyActivity,
     };
-  }
-
-  factory DailyStats.empty(DateTime date) {
-    return DailyStats(
-      date: date,
-      studyTimeMinutes: 0,
-      completedTasks: 0,
-      totalTasks: 0,
-      categoryTime: {},
-      achievements: [],
-      hourlyActivity: {},
-    );
   }
 
   double get completionRate => totalTasks > 0 ? completedTasks / totalTasks : 0.0;
