@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:ThinQ/data/thinq_device.dart';
+import 'package:dx_project/data/thinq_device.dart';
 
 class ThinQService {
   // 싱글톤 패턴 구현

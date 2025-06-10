@@ -7,9 +7,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:ThinQ/data/character.dart';
-import 'package:ThinQ/data/character_item.dart';
-import 'package:ThinQ/pages/premium_subscription_page.dart';
+import 'package:dx_project/data/character.dart';
+import 'package:dx_project/data/character_item.dart';
+import 'package:dx_project/pages/premium_subscription_page.dart';
 
 class CharacterCustomizationPage extends StatefulWidget {
   final Character character;
@@ -665,30 +665,14 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
       ),
       body: _isLoading && _items.isEmpty
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // 아바타 미리보기 영역
-                Container(
-                  height: 200,
-                  color: Colors.grey.shade100,
-                  child: Center(
-                    child: _buildAvatarPreview(),
-                  ),
-                ),
-                
-                // 아이템 선택 영역 - TabBarView는 많은 메모리를 소비할 수 있으므로 최적화
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: List.generate(_categoryKeys.length, (index) {
-                      if (_categoryKeys[index] == 'avatar') {
-                        return _buildAvatarGenerationTab();
-                      }
-                      return _getCachedItemsGrid(_categoryKeys[index]);
-                    }),
-                  ),
-                ),
-              ],
+          : TabBarView(
+              controller: _tabController,
+              children: List.generate(_categoryKeys.length, (index) {
+                if (_categoryKeys[index] == 'avatar') {
+                  return _buildAvatarGenerationTab();
+                }
+                return _getCachedItemsGrid(_categoryKeys[index]);
+              }),
             ),
     );
   }
@@ -700,116 +684,155 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '캐릭터 생성',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '원하는 특성을 입력하면 캐릭터를 생성합니다.',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 20),
-          
-          // 프롬프트 입력 필드
-          TextField(
-            controller: _avatarPromptController,
-            decoration: const InputDecoration(
-              labelText: '캐릭터 특징 (예: 파란머리 마법사, 빨간 모자 전사 등)',
-              border: OutlineInputBorder(),
-              hintText: '원하는 캐릭터의 특징을 입력하세요',
-            ),
-            maxLines: 3,
-            enabled: !_isGeneratingAvatar,
-          ),
-          const SizedBox(height: 16),
-          
-          // 생성 버튼
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isGeneratingAvatar ? null : () => _generateAvatar(_avatarPromptController.text.trim()),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Colors.blue,
+          // 캐릭터 미리보기 영역
+          if (_generatedAvatarUrl.isNotEmpty)
+            Center(
+              child: Container(
+                width: 300,
+                height: 300,
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                  image: DecorationImage(
+                    image: NetworkImage(_generatedAvatarUrl),
+                    fit: BoxFit.cover,
+                  ),
+                ),
               ),
-              child: _isGeneratingAvatar
-                  ? const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        ),
-                        SizedBox(width: 10),
-                        Text('아바타 생성 중...', style: TextStyle(fontSize: 16)),
-                      ],
-                    )
-                  : const Text('아바타 생성하기', style: TextStyle(fontSize: 16)),
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // 생성된 아바타 표시
-          if (_generatedAvatarUrl.isNotEmpty) ...[
-            const Text(
-              '생성된 아바타:',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              alignment: Alignment.center,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  _generatedAvatarUrl,
-                  height: 300,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Container(
-                      height: 300,
-                      alignment: Alignment.center,
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                            : null,
+            )
+          else
+            Center(
+              child: Container(
+                width: 300,
+                height: 300,
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.person_outline,
+                      size: 80,
+                      color: Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '캐릭터를 생성해보세요!',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 18,
                       ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      height: 300,
-                      color: Colors.grey.shade300,
-                      alignment: Alignment.center,
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.error_outline, size: 40, color: Colors.red),
-                          SizedBox(height: 8),
-                          Text('이미지를 불러올 수 없습니다'),
-                        ],
-                      ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
+          
+          // 간단한 프롬프트 입력
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: _avatarPromptController,
+              decoration: InputDecoration(
+                hintText: '원하는 캐릭터를 간단히 설명해주세요',
+                hintStyle: TextStyle(color: Colors.grey.shade400),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.blue.shade300),
+                ),
+                prefixIcon: const Icon(Icons.edit),
+                suffixIcon: _isGeneratingAvatar
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: Padding(
+                        padding: EdgeInsets.all(12),
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.send),
+                      onPressed: () {
+                        if (_avatarPromptController.text.isNotEmpty) {
+                          _generateAvatar(_avatarPromptController.text);
+                        }
+                      },
+                    ),
+              ),
+              enabled: !_isGeneratingAvatar,
+              maxLines: 1,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (value) {
+                if (value.isNotEmpty) {
+                  _generateAvatar(value);
+                }
+              },
+            ),
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // 프롬프트 예시
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.shade100),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.lightbulb_outline, color: Colors.blue.shade700),
+                    const SizedBox(width: 8),
+                    Text(
+                      '프롬프트 예시',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '• 파란 머리 마법사\n'
+                  '• 귀여운 고양이\n'
+                  '• 웃는 로봇\n'
+                  '• 빨간 모자 전사',
+                  style: TextStyle(
+                    color: Colors.blue.shade700,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:ThinQ/data/thinq_device.dart';
-import 'package:ThinQ/services/thinq_service.dart';
+import 'package:dx_project/data/thinq_device.dart';
+import 'package:dx_project/services/thinq_service.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:intl/intl.dart';
 

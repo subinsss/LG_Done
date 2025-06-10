@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
-import 'package:ThinQ/data/task.dart';
+import 'package:dx_project/data/task.dart';
 
 class TaskItem {
   final String title;

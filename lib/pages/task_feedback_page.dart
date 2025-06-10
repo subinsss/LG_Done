@@ -2,9 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:ThinQ/data/character.dart';
-import 'package:ThinQ/data/task.dart';
-import 'package:ThinQ/services/character_ai_service.dart';
+import 'package:dx_project/data/character.dart';
+import 'package:dx_project/data/task.dart';
+import 'package:dx_project/services/character_ai_service.dart';
 
 class TaskFeedbackPage extends StatefulWidget {
   final Character character;

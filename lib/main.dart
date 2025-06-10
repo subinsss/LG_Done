@@ -114,9 +114,11 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Pretendard',
         appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
           elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          scrolledUnderElevation: 0,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
@@ -128,6 +130,13 @@ class MyApp extends StatelessWidget {
           color: Colors.white,
           elevation: 2,
           shadowColor: Colors.black.withOpacity(0.1),
+        ),
+        bottomNavigationBarTheme: BottomNavigationBarThemeData(
+          backgroundColor: Colors.white,
+          selectedItemColor: Colors.black,
+          unselectedItemColor: Colors.grey.shade400,
+          elevation: 8,
+          type: BottomNavigationBarType.fixed,
         ),
       ),
       home: const MainTabPage(),

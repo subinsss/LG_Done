@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:ThinQ/data/thinq_device.dart';
-import 'package:ThinQ/services/thinq_service.dart';
-import 'package:ThinQ/pages/device_detail_page.dart';
+import 'package:dx_project/data/thinq_device.dart';
+import 'package:dx_project/services/thinq_service.dart';
+import 'package:dx_project/pages/device_detail_page.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 
 class ThinQHubPage extends StatefulWidget {

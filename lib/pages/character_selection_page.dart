@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:ThinQ/data/character.dart';
-import 'package:ThinQ/pages/chat_page.dart';
-import 'package:ThinQ/pages/character_customization_page.dart';
-import 'package:ThinQ/pages/premium_subscription_page.dart';
+import 'package:dx_project/data/character.dart';
+import 'package:dx_project/pages/chat_page.dart';
+import 'package:dx_project/pages/character_customization_page.dart';
+import 'package:dx_project/pages/premium_subscription_page.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 

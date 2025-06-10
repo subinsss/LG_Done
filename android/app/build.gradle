@@ -16,6 +16,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
+        // Java 8 desugaring 활성화
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
@@ -54,6 +56,8 @@ dependencies {
     implementation 'com.google.firebase:firebase-analytics'
     implementation 'com.google.firebase:firebase-firestore'
     implementation 'androidx.multidex:multidex:2.0.1'
+    // Java 8 desugaring 의존성 추가
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
 }
 
 flutter {

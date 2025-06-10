@@ -5,14 +5,13 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:ThinQ/data/task.dart';
-import 'package:ThinQ/data/character.dart';
-import 'package:ThinQ/pages/setting_page.dart';
-import 'package:ThinQ/pages/character_selection_page.dart';
-import 'package:ThinQ/pages/character_customization_page.dart';
-import 'package:ThinQ/pages/thinq_hub_page.dart';
-import 'package:ThinQ/pages/premium_subscription_page.dart';
-
+import 'package:dx_project/data/task.dart';
+import 'package:dx_project/data/character.dart';
+import 'package:dx_project/pages/setting_page.dart';
+import 'package:dx_project/pages/character_selection_page.dart';
+import 'package:dx_project/pages/character_customization_page.dart';
+import 'package:dx_project/pages/thinq_hub_page.dart';
+import 'package:dx_project/pages/premium_subscription_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});

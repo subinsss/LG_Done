@@ -250,16 +250,304 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     }
   }
 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('AI 캐릭터', 
+          style: TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          )
+        ),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.black,
+          labelColor: Colors.black,
+          unselectedLabelColor: Colors.grey,
+          tabs: const [
+            Tab(text: '내 캐릭터'),
+            Tab(text: '새로 만들기'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildMyCharactersTab(),
+          _buildCreateCharacterTab(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMyCharactersTab() {
+    return Container(
+      color: Colors.white,
+      child: _userCharacters.isEmpty
+          ? Center(
+              child: Text(
+                '생성된 캐릭터가 없습니다\n새로운 캐릭터를 만들어보세요!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 16,
+                ),
+              ),
+            )
+          : GridView.builder(
+              padding: const EdgeInsets.all(16),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 0.75,
+              ),
+              itemCount: _userCharacters.length,
+              itemBuilder: (context, index) {
+                final character = _userCharacters[index];
+                return _buildCharacterCard(character);
+              },
+            ),
+    );
+  }
+
+  Widget _buildCharacterCard(AICharacter character) {
+    return Card(
+      color: Colors.white,
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              child: Image.network(
+                character.imageUrl,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.black,
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded /
+                              loadingProgress.expectedTotalBytes!
+                          : null,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  character.name,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  character.prompt,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreateCharacterTab() {
+    return Container(
+      color: Colors.white,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildSectionTitle('캐릭터 타입'),
+            const SizedBox(height: 12),
+            _buildCharacterTypeSelector(),
+            const SizedBox(height: 24),
+            
+            _buildSectionTitle('스타일'),
+            const SizedBox(height: 12),
+            _buildStyleSelector(),
+            const SizedBox(height: 24),
+            
+            _buildSectionTitle('프롬프트'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _promptController,
+              style: const TextStyle(color: Colors.black),
+              decoration: InputDecoration(
+                hintText: '원하는 캐릭터를 설명해주세요',
+                hintStyle: TextStyle(color: Colors.grey[400]),
+                filled: true,
+                fillColor: Colors.grey[50],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[200]!),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[200]!),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.black),
+                ),
+                contentPadding: const EdgeInsets.all(16),
+              ),
+              maxLines: 3,
+            ),
+            const SizedBox(height: 32),
+            
+            ElevatedButton(
+              onPressed: _isGenerating ? null : _generateFromPrompt,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+              child: _isGenerating
+                  ? const SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text(
+                      '캐릭터 생성하기',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+            ),
+            
+            if (_usageStats != null) ...[
+              const SizedBox(height: 24),
+              Text(
+                '오늘 생성 가능: ${_usageStats!['remaining_today'] ?? 0}회',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: Colors.black,
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+  }
+
+  Widget _buildCharacterTypeSelector() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _characterTypes.entries.map((entry) {
+        final isSelected = _selectedCharacterType == entry.key;
+        return ChoiceChip(
+          label: Text(entry.value),
+          selected: isSelected,
+          onSelected: (selected) {
+            if (selected) {
+              setState(() {
+                _selectedCharacterType = entry.key;
+              });
+            }
+          },
+          backgroundColor: Colors.grey[50],
+          selectedColor: Colors.black,
+          labelStyle: TextStyle(
+            color: isSelected ? Colors.white : Colors.black,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildStyleSelector() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _styleTypes.entries.map((entry) {
+        final isSelected = _selectedStyle == entry.key;
+        return ChoiceChip(
+          label: Text(entry.value),
+          selected: isSelected,
+          onSelected: (selected) {
+            if (selected) {
+              setState(() {
+                _selectedStyle = entry.key;
+              });
+            }
+          },
+          backgroundColor: Colors.grey[50],
+          selectedColor: Colors.black,
+          labelStyle: TextStyle(
+            color: isSelected ? Colors.white : Colors.black,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('오류'),
-        content: Text(message),
+        backgroundColor: Colors.white,
+        title: const Text('오류', style: TextStyle(color: Colors.black)),
+        content: Text(message, style: TextStyle(color: Colors.grey[800])),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('확인'),
+            child: const Text('확인', style: TextStyle(color: Colors.black)),
           ),
         ],
       ),
@@ -270,12 +558,13 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('성공'),
-        content: Text(message),
+        backgroundColor: Colors.white,
+        title: const Text('성공', style: TextStyle(color: Colors.black)),
+        content: Text(message, style: TextStyle(color: Colors.grey[800])),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('확인'),
+            child: const Text('확인', style: TextStyle(color: Colors.black)),
           ),
         ],
       ),
@@ -312,7 +601,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: Colors.pink.shade50,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -335,506 +624,11 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
             value: percentage / 100,
             backgroundColor: Colors.grey.shade300,
             valueColor: AlwaysStoppedAnimation<Color>(
-              percentage > 80 ? Colors.red : Colors.blue,
+              percentage > 80 ? Colors.red : Colors.pink,
             ),
           ),
         ],
       ),
     );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('AI 캐릭터'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: '새로 만들기'),
-            Tab(text: '내 캐릭터'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildAIGenerationTab(),
-          _buildMyCharactersTab(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAIGenerationTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildServerStatusIndicator(),
-          const SizedBox(height: 12),
-          _buildUsageIndicator(),
-          const SizedBox(height: 24),
-          Text(
-            'AI로 캐릭터 생성하기',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 16),
-          
-          // 캐릭터 타입 및 스타일 선택
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.tune, size: 20, color: Colors.purple.shade600),
-                      const SizedBox(width: 8),
-                      const Text(
-                        '캐릭터 설정',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // 캐릭터 타입 선택
-                  const Text('캐릭터 타입', style: TextStyle(fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: _selectedCharacterType,
-                        isExpanded: true,
-                        onChanged: (String? newValue) {
-                          if (newValue != null && mounted) {
-                            setState(() {
-                              _selectedCharacterType = newValue;
-                            });
-                          }
-                        },
-                        items: _characterTypes.entries.map<DropdownMenuItem<String>>((entry) {
-                          return DropdownMenuItem<String>(
-                            value: entry.key,
-                            child: Text(entry.value),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // 스타일 선택
-                  const Text('아트 스타일', style: TextStyle(fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: _selectedStyle,
-                        isExpanded: true,
-                        onChanged: (String? newValue) {
-                          if (newValue != null && mounted) {
-                            setState(() {
-                              _selectedStyle = newValue;
-                            });
-                          }
-                        },
-                        items: _styleTypes.entries.map<DropdownMenuItem<String>>((entry) {
-                          return DropdownMenuItem<String>(
-                            value: entry.key,
-                            child: Text(entry.value),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          
-          // 프롬프트 입력
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.edit, size: 20, color: Colors.blue.shade600),
-                      const SizedBox(width: 8),
-                      const Text(
-                        '세부 설명',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _promptController,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      hintText: '예: 파란 눈을 가진 귀여운 고양이\n흰색 털, 분홍색 코, 작은 체구',
-                      border: const OutlineInputBorder(),
-                      helperText: '위에서 선택한 타입에 맞는 세부 특징을 입력하세요',
-                      helperMaxLines: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isGenerating || !_isServerHealthy
-                          ? null
-                          : _generateFromPrompt,
-                      icon: _isGenerating
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.auto_awesome),
-                      label: Text(_isGenerating ? '생성 중...' : '캐릭터 생성하기'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: Colors.blue.shade600,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMyCharactersTab() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '내 캐릭터',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              IconButton(
-                onPressed: () async {
-                  // 캐시 새로고침으로 최적화
-                  AICharacterService.refreshCache();
-                  await _loadUserCharacters();
-                },
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _buildUsageIndicator(),
-          const SizedBox(height: 16),
-          Expanded(
-            child: _userCharacters.isEmpty
-                ? const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.person_outline, size: 64, color: Colors.grey),
-                        SizedBox(height: 16),
-                        Text(
-                          '아직 생성된 캐릭터가 없습니다',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  )
-                : GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.8,
-                    ),
-                    itemCount: _userCharacters.length,
-                    itemBuilder: (context, index) {
-                      final character = _userCharacters[index];
-                      
-                      return Card(
-                        clipBehavior: Clip.antiAlias,
-                        elevation: character.characterId == _selectedAICharacter?['character_id'] ? 3 : 1,
-                        color: character.characterId == _selectedAICharacter?['character_id'] 
-                            ? Colors.blue.shade50 
-                            : Colors.white,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              child: Stack(
-                                children: [
-                                  Container(
-                                    width: double.infinity,
-                                    child: _buildCharacterImage(character.imageUrl),
-                                  ),
-                                  // 선택됨 표시
-                                  if (character.characterId == _selectedAICharacter?['character_id'])
-                                    Positioned(
-                                      top: 8,
-                                      left: 8,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green,
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.check, color: Colors.white, size: 16),
-                                            SizedBox(width: 4),
-                                            Text(
-                                              '선택됨',
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  Positioned(
-                                    top: 8,
-                                    right: 8,
-                                    child: PopupMenuButton(
-                                      icon: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black54,
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: const Icon(
-                                          Icons.more_vert,
-                                          color: Colors.white,
-                                          size: 16,
-                                        ),
-                                      ),
-                                      itemBuilder: (context) => [
-                                        PopupMenuItem(
-                                          child: const Row(
-                                            children: [
-                                              Icon(Icons.delete, color: Colors.red),
-                                              SizedBox(width: 8),
-                                              Text('삭제'),
-                                            ],
-                                          ),
-                                          onTap: () => _deleteCharacter(character),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    character.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    character.prompt,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: ElevatedButton(
-                                      onPressed: character.characterId == _selectedAICharacter?['character_id']
-                                          ? null // 이미 선택된 캐릭터는 비활성화
-                                          : () => _applyCharacter(character),
-                                      style: ElevatedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 8),
-                                        backgroundColor: character.characterId == _selectedAICharacter?['character_id']
-                                            ? Colors.grey.shade300
-                                            : Colors.blue.shade600,
-                                        foregroundColor: character.characterId == _selectedAICharacter?['character_id']
-                                            ? Colors.grey.shade600
-                                            : Colors.white,
-                                      ),
-                                      child: Text(
-                                        character.characterId == _selectedAICharacter?['character_id']
-                                            ? '현재 사용 중'
-                                            : '선택하기',
-                                        style: const TextStyle(fontSize: 12),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCharacterImage(String imageUrl) {
-    try {
-      // Base64 이미지인지 확인
-      if (imageUrl.startsWith('data:image/')) {
-        // Base64 데이터 추출
-        final base64String = imageUrl.split(',')[1];
-        final Uint8List bytes = base64Decode(base64String);
-        
-        return Image.memory(
-          bytes,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            print('Base64 이미지 로딩 오류: $error');
-            return Container(
-              color: Colors.grey.shade200,
-              child: const Icon(
-                Icons.error,
-                color: Colors.grey,
-              ),
-            );
-          },
-        );
-      } else {
-        // 일반 네트워크 이미지
-        return Image.network(
-          imageUrl,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          },
-          errorBuilder: (context, error, stackTrace) {
-            print('네트워크 이미지 로딩 오류: $error');
-            return Container(
-              color: Colors.grey.shade200,
-              child: const Icon(
-                Icons.error,
-                color: Colors.grey,
-              ),
-            );
-          },
-        );
-      }
-    } catch (e) {
-      print('이미지 처리 오류: $e');
-      return Container(
-        color: Colors.grey.shade200,
-        child: const Icon(
-          Icons.error,
-          color: Colors.grey,
-        ),
-      );
-    }
-  }
-
-  Future<void> _applyCharacter(AICharacter character) async {
-    try {
-      // 🔥 Firestore에서 직접 is_selected 업데이트
-      final firestore = FirebaseFirestore.instance;
-      final batch = firestore.batch();
-      
-      // 1. 모든 캐릭터의 is_selected를 false로 설정
-      final allCharacters = await firestore.collection('characters').get();
-      for (var doc in allCharacters.docs) {
-        batch.update(doc.reference, {'is_selected': false});
-      }
-      
-      // 2. 선택한 캐릭터만 is_selected를 true로 설정
-      final selectedDoc = firestore.collection('characters').doc(character.characterId);
-      batch.update(selectedDoc, {'is_selected': true});
-      
-      // 3. 배치 커밋
-      await batch.commit();
-      
-      // SharedPreferences에도 저장 (백업용)
-      final prefs = await SharedPreferences.getInstance();
-      final characterData = {
-        'character_id': character.characterId,
-        'name': character.name,
-        'image_url': character.imageUrl,
-        'prompt': character.prompt,
-        'type': 'ai_generated',
-        'is_selected': true,
-      };
-      
-      await prefs.setString('selected_character', jsonEncode(characterData));
-      
-      // 선택된 캐릭터 정보 업데이트
-      setState(() {
-        _selectedAICharacter = characterData;
-      });
-      
-      // 성공 메시지
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${character.name}을(를) 선택했습니다!'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-      
-      // 홈화면으로 돌아가기 (실시간 스트림이 자동으로 업데이트)
-      Navigator.pop(context, true);
-      
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('캐릭터 적용에 실패했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 } 

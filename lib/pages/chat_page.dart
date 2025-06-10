@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
-import 'package:ThinQ/pages/model.dart';
-import 'package:ThinQ/data/character.dart';
+import 'package:dx_project/pages/model.dart';
+import 'package:dx_project/data/character.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';

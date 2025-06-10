@@ -666,35 +666,68 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     _loadTodoCountsForMonth(_selectedDay);
   }
 
+  // 실시간 캘린더 업데이트를 위한 헬퍼 함수
+  void _updateTodoCountForDate(String dateString, int change) {
+    setState(() {
+      final currentCount = _todoCountsByDate[dateString] ?? 0;
+      final newCount = currentCount + change;
+      
+      print('🔄 [_updateTodoCountForDate] $dateString: $currentCount → $newCount (변화: $change)');
+      
+      if (newCount <= 0) {
+        _todoCountsByDate.remove(dateString);
+        print('🗑️ [_updateTodoCountForDate] $dateString 제거됨 (0개 이하)');
+      } else {
+        _todoCountsByDate[dateString] = newCount;
+        print('✅ [_updateTodoCountForDate] $dateString 업데이트: $newCount개');
+      }
+    });
+    
+    print('📊 [_updateTodoCountForDate] 업데이트 후 전체 상태: $_todoCountsByDate');
+  }
+
   // 월별 할일 개수 로드
   Future<void> _loadTodoCountsForMonth(DateTime month) async {
     try {
-      print('🔄 월별 할일 개수 로드 시작: ${DateFormat('yyyy-MM').format(month)}');
+      print('🔄 [_loadTodoCountsForMonth] 시작: ${DateFormat('yyyy-MM').format(month)}');
       final counts = await _firestoreService.getTodoCountsByMonth(month);
+      
+      print('📊 [_loadTodoCountsForMonth] Firebase에서 받은 데이터: $counts');
       
       // 이제 Firebase에서 바로 문자열 키로 받아옴 (변환 불필요)
       setState(() {
         _todoCountsByDate = counts;
       });
-      print('📅 월별 할일 개수 로드 완료: ${counts.length}개 날짜');
+      print('📅 [_loadTodoCountsForMonth] 상태 업데이트 완료: ${counts.length}개 날짜');
       
       // 각 날짜별 개수 출력
       counts.forEach((dateString, count) {
-        print('  - $dateString: $count개');
+        print('  📋 $dateString: $count개');
       });
       
       // 6월 10일 특별 확인
       final june10 = '2024-06-10';
       if (counts.containsKey(june10)) {
-        print('🎯 6월 10일 확인됨: ${counts[june10]}개 할일');
+        print('🎯 [FOUND] 6월 10일 확인됨: ${counts[june10]}개 할일');
       } else {
-        print('⚠️ 6월 10일 데이터 없음');
+        print('⚠️ [NOT FOUND] 6월 10일 데이터 없음');
+        // 6월 날짜들만 필터링해서 출력
+        final juneDates = counts.keys.where((key) => key.startsWith('2024-06')).toList();
+        print('🔍 [DEBUG] 6월 관련 날짜들: $juneDates');
       }
       
       // 전체 _todoCountsByDate 상태 출력
-      print('🗂️ 현재 _todoCountsByDate 전체: $_todoCountsByDate');
+      print('🗂️ [_loadTodoCountsForMonth] 현재 _todoCountsByDate 전체: $_todoCountsByDate');
+      
+      // 캘린더 강제 새로고침을 위한 작은 트릭
+      if (mounted) {
+        setState(() {
+          // 상태를 한번 더 업데이트해서 캘린더가 확실히 다시 그려지도록 함
+        });
+      }
+      
     } catch (e) {
-      print('❌ 월별 할일 개수 로드 실패: $e');
+      print('❌ [_loadTodoCountsForMonth] 월별 할일 개수 로드 실패: $e');
       setState(() {
         _todoCountsByDate = {};
       });
@@ -723,8 +756,11 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     
     if (success) {
       print('✅ Firestore 삭제 성공: ${todo.id}');
-      // 캘린더 할일 개수 업데이트
-      await _loadTodoCountsForMonth(_selectedDay);
+      
+      // 실시간 캘린더 개수 업데이트 (삭제된 날짜에서 -1)
+      final todoDateString = DateFormat('yyyy-MM-dd').format(todo.dueDate ?? _selectedDay);
+      _updateTodoCountForDate(todoDateString, -1);
+      
     } else {
       print('❌ Firestore 삭제 실패: ${todo.id}');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -822,11 +858,15 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('${todo.title}을(를) 다음 날로 이동했습니다')),
           );
-          // 캘린더 할일 개수 업데이트 (현재 날짜와 이동된 날짜)
-          await _loadTodoCountsForMonth(_selectedDay);
+          
+          // 실시간 캘린더 개수 업데이트 (기존 날짜 -1, 이동된 날짜 +1)
           if (todo.dueDate != null) {
+            final currentDateString = DateFormat('yyyy-MM-dd').format(todo.dueDate!);
             final nextDay = todo.dueDate!.add(Duration(days: 1));
-            await _loadTodoCountsForMonth(nextDay);
+            final nextDayString = DateFormat('yyyy-MM-dd').format(nextDay);
+            
+            _updateTodoCountForDate(currentDateString, -1);
+            _updateTodoCountForDate(nextDayString, 1);
           }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -841,10 +881,12 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('${todo.title}을(를) 다음 날로 복사했습니다')),
           );
-          // 캘린더 할일 개수 업데이트 (복사된 날짜)
+          
+          // 실시간 캘린더 개수 업데이트 (복사된 날짜에 +1)
           if (todo.dueDate != null) {
             final nextDay = todo.dueDate!.add(Duration(days: 1));
-            await _loadTodoCountsForMonth(nextDay);
+            final nextDayString = DateFormat('yyyy-MM-dd').format(nextDay);
+            _updateTodoCountForDate(nextDayString, 1);
           }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -914,8 +956,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       _categoryController.clear();
       Navigator.of(context).pop();
       
-      // 캘린더 할일 개수 업데이트
-      await _loadTodoCountsForMonth(_selectedDay);
+      // 실시간 캘린더 개수 업데이트 (추가된 날짜에 +1)
+      final addedDateString = DateFormat('yyyy-MM-dd').format(_selectedDay);
+      _updateTodoCountForDate(addedDateString, 1);
+      
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('할일 추가에 실패했습니다')),
@@ -940,9 +984,16 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     );
     
     if (success) {
-      // 캘린더 할일 개수 업데이트
-      await _loadTodoCountsForMonth(_selectedDay);
-      await _loadTodoCountsForMonth(newDueDate); // 새로운 날짜의 개수도 업데이트
+      // 날짜가 변경된 경우만 실시간 캘린더 개수 업데이트
+      final oldDateString = DateFormat('yyyy-MM-dd').format(todo.dueDate ?? _selectedDay);
+      final newDateString = DateFormat('yyyy-MM-dd').format(newDueDate);
+      
+      if (oldDateString != newDateString) {
+        // 기존 날짜에서 -1, 새 날짜에서 +1
+        _updateTodoCountForDate(oldDateString, -1);
+        _updateTodoCountForDate(newDateString, 1);
+      }
+      
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('할일 수정에 실패했습니다')),
@@ -1207,7 +1258,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 // 현재 선택된 날짜면 _todos 데이터 사용 (가장 정확함)
                 if (isSameDay(day, _selectedDay) && _todos.isNotEmpty) {
                   final todosForDay = _todos.length;
-                  print('📅 선택된 날짜 $dayString: $todosForDay개 할일');
+                  print('📅 [EventLoader] 선택된 날짜 $dayString: $todosForDay개 할일');
                   return List.generate(todosForDay, (index) => TodoItem(
                     id: 'selected_day_$index',
                     title: 'dummy',
@@ -1222,14 +1273,20 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 // 다른 날짜는 _todoCountsByDate에서 확인
                 int count = _todoCountsByDate[dayString] ?? 0;
                 
+                // 디버깅 정보 강화
                 if (count > 0) {
-                  print('📅 $dayString: $count개 할일 (캐시됨)');
+                  print('📅 [EventLoader] $dayString: $count개 할일 (캐시됨)');
                 } else {
-                  print('📅 $dayString: 할일 없음');
+                  // 디버깅: _todoCountsByDate 전체 상태도 출력
+                  if (dayString.contains('2024-06-10')) {
+                    print('🔍 [DEBUG] 6월 10일 확인: count=$count');
+                    print('🔍 [DEBUG] _todoCountsByDate 전체 키: ${_todoCountsByDate.keys.toList()}');
+                    print('🔍 [DEBUG] _todoCountsByDate 크기: ${_todoCountsByDate.length}');
+                  }
                 }
                 
                 return List.generate(count, (index) => TodoItem(
-                  id: 'cached_$dayString$index',
+                  id: 'cached_${dayString}_$index',
                   title: 'dummy',
                   isCompleted: false,
                   category: '',
@@ -1255,16 +1312,22 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
               calendarBuilders: CalendarBuilders(
                 markerBuilder: (context, day, events) {
                   if (events.isNotEmpty) {
+                    final dayString = DateFormat('yyyy-MM-dd').format(day);
+                    final count = events.length;
+                    
+                    // 디버깅 로그
+                    print('🎯 [MarkerBuilder] $dayString: $count개 이벤트 표시');
+                    
                     return Positioned(
                       bottom: 1,
                       child: Container(
                         decoration: BoxDecoration(
                           color: Colors.black,
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         child: Text(
-                          '...',
+                          count.toString(),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,

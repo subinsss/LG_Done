@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:ThinQ/data/character.dart';
-import 'package:ThinQ/data/chat_message.dart';
-import 'package:ThinQ/data/task.dart';
+import 'package:dx_project/data/character.dart';
+import 'package:dx_project/data/chat_message.dart';
+import 'package:dx_project/data/task.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 
 class CharacterAIService {
