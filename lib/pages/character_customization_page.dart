@@ -135,7 +135,7 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
             ? const Center(
                 child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+                        children: [
                     CircularProgressIndicator(color: Color(0xFFF36D9D)),
                     SizedBox(height: 16),
                     Text('캐릭터를 만들고 있어요...', style: TextStyle(color: Colors.black54)),
