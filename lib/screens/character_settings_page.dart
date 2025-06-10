@@ -21,6 +21,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     with TickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _promptController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
 
   bool _isGenerating = false;
@@ -28,26 +29,6 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
   List<AICharacter> _userCharacters = [];
   Map<String, dynamic>? _usageStats;
   Map<String, dynamic>? _selectedAICharacter;
-  
-  // 캐릭터 타입 선택을 위한 변수들
-  String _selectedCharacterType = 'animal';
-  String _selectedStyle = 'anime';
-  
-  final Map<String, String> _characterTypes = {
-    'animal': '동물',
-    'human': '사람',
-    'fantasy': '판타지',
-    'robot': '로봇/메카',
-    'creature': '몬스터/크리처',
-  };
-  
-  final Map<String, String> _styleTypes = {
-    'anime': '애니메이션',
-    'realistic': '사실적',
-    'cartoon': '카툰',
-    'chibi': '치비',
-    'pixel': '픽셀아트',
-  };
 
   @override
   void initState() {
@@ -72,6 +53,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
   void dispose() {
     _tabController.dispose();
     _promptController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -131,7 +113,148 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     }
   }
 
+  Future<void> _selectCharacter(AICharacter character) async {
+    try {
+      // 1. 먼저 모든 캐릭터의 is_selected를 false로 변경
+      final allCharacters = await FirebaseFirestore.instance
+          .collection('characters')
+          .where('is_selected', isEqualTo: true)
+          .get();
+      
+      final batch = FirebaseFirestore.instance.batch();
+      
+      for (final doc in allCharacters.docs) {
+        batch.update(doc.reference, {'is_selected': false});
+      }
+      
+      // 2. 선택된 캐릭터의 is_selected를 true로 변경
+      final selectedCharacterRef = FirebaseFirestore.instance
+          .collection('characters')
+          .doc(character.characterId);
+      
+      batch.update(selectedCharacterRef, {'is_selected': true});
+      
+      // 배치 커밋
+      await batch.commit();
+      
+      final characterData = {
+        'character_id': character.characterId,
+        'name': character.name,
+        'prompt': character.prompt,
+        'image_url': character.imageUrl,
+        'selected_at': DateTime.now().toIso8601String(),
+      };
+
+      // SharedPreferences에 저장
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('selected_character', jsonEncode(characterData));
+
+      // Firestore users 컬렉션에도 저장 (홈화면 실시간 업데이트용)
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc('anonymous_user')
+            .set({
+          'selected_character': characterData,
+          'updated_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        // Firestore 저장 실패는 무시
+      }
+
+      // UI 업데이트
+      if (mounted) {
+        setState(() {
+          _selectedAICharacter = characterData;
+        });
+        
+        // 성공 메시지 표시
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${character.name} 캐릭터가 선택되었습니다!'),
+            backgroundColor: Colors.black,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        
+        // 홈화면으로 돌아가기
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('캐릭터 선택에 실패했습니다: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showDeleteConfirmDialog(AICharacter character) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red.shade400),
+            const SizedBox(width: 8),
+            const Text(
+              '캐릭터 삭제',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          '\'${character.name}\' 캐릭터를 정말 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.',
+          style: const TextStyle(color: Colors.black),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              '취소',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _deleteCharacter(character);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade400,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              '삭제',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
   Future<void> _generateFromPrompt() async {
+    if (_nameController.text.trim().isEmpty) {
+      _showErrorDialog('캐릭터 이름을 입력해주세요');
+      return;
+    }
+    
     if (_promptController.text.trim().isEmpty) {
       _showErrorDialog('프롬프트를 입력해주세요');
       return;
@@ -149,21 +272,37 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     }
 
     try {
-      // 캐릭터 타입을 포함한 프롬프트 생성
-      final characterTypeKorean = _characterTypes[_selectedCharacterType] ?? '동물';
-      final enhancedPrompt = '$characterTypeKorean ${_promptController.text.trim()}';
+      final prompt = _promptController.text.trim();
       
-      print('🎨 생성 요청: 타입=$characterTypeKorean, 스타일=$_selectedStyle, 프롬프트=${_promptController.text.trim()}');
+      print('🎨 생성 요청: 프롬프트=$prompt');
       
       // 서버에서 이미지 생성 + Firestore 저장까지 모두 처리
       final result = await AICharacterService.generateImageFromPrompt(
-        prompt: enhancedPrompt,
-        style: _selectedStyle,
+        prompt: prompt,
+        name: _nameController.text.trim(),
+        style: 'anime', // 기본 스타일을 anime로 고정
       );
 
       if (result != null) {
+        // 생성된 캐릭터의 name 필드를 확실히 업데이트
+        try {
+          final characterId = result['character_id'];
+          if (characterId != null) {
+            await FirebaseFirestore.instance
+                .collection('characters')
+                .doc(characterId)
+                .update({
+              'name': _nameController.text.trim(),
+            });
+            print('✅ 캐릭터 이름 업데이트 완료: ${_nameController.text.trim()}');
+          }
+        } catch (e) {
+          print('❌ 캐릭터 이름 업데이트 실패: $e');
+        }
+        
         _showSuccessDialog(result['message'] ?? '캐릭터가 성공적으로 생성되었습니다!');
         _promptController.clear();
+        _nameController.clear();
         
         // UI 업데이트
         await _loadUserCharacters();
@@ -219,33 +358,66 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
   }
 
   Future<void> _deleteCharacter(AICharacter character) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('캐릭터 삭제'),
-        content: Text('${character.name}을(를) 정말 삭제하시겠습니까?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
+    try {
+      // 삭제되는 캐릭터가 선택된 캐릭터인지 확인
+      final isSelectedCharacter = character.isSelected || 
+          _selectedAICharacter?['character_id'] == character.characterId;
+      
       final success = await AICharacterService.deleteCharacter(character.characterId);
+      
       if (success) {
-        _showSuccessDialog('캐릭터가 삭제되었습니다');
+        // 선택된 캐릭터가 삭제된 경우 선택 해제
+        if (isSelectedCharacter) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('selected_character');
+          
+          try {
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc('anonymous_user')
+                .update({
+              'selected_character': FieldValue.delete(),
+            });
+          } catch (e) {
+            // Firestore 업데이트 실패는 무시
+          }
+          
+          setState(() {
+            _selectedAICharacter = null;
+          });
+        }
+        
+        // 캐릭터 목록 새로고침
         await _loadUserCharacters();
         await _loadUsageStats();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${character.name} 캐릭터가 삭제되었습니다'),
+              backgroundColor: Colors.black,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       } else {
-        _showErrorDialog('캐릭터 삭제에 실패했습니다');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('캐릭터 삭제에 실패했습니다'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('캐릭터 삭제 중 오류가 발생했습니다: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -270,7 +442,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
           unselectedLabelColor: Colors.grey,
           tabs: const [
             Tab(text: '내 캐릭터'),
-            Tab(text: '새로 만들기'),
+            Tab(text: '캐릭터 만들기'),
           ],
         ),
       ),
@@ -316,35 +488,66 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
   }
 
   Widget _buildCharacterCard(AICharacter character) {
+    final isSelected = _selectedAICharacter?['character_id'] == character.characterId;
+    
     return Card(
       color: Colors.white,
       elevation: 4,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey[200]!),
+        side: BorderSide(
+          color: isSelected ? Colors.black : Colors.grey[200]!,
+          width: isSelected ? 2 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              child: Image.network(
-                character.imageUrl,
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Center(
-                    child: CircularProgressIndicator(
-                      color: Colors.black,
-                      value: loadingProgress.expectedTotalBytes != null
-                          ? loadingProgress.cumulativeBytesLoaded /
-                              loadingProgress.expectedTotalBytes!
-                          : null,
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  child: Image.network(
+                    character.imageUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Center(
+                        child: CircularProgressIndicator(
+                          color: Colors.black,
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                // 삭제 버튼 (우상단)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: GestureDetector(
+                    onTap: () => _showDeleteConfirmDialog(character),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.7),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.delete_outline,
+                        color: Colors.white,
+                        size: 16,
+                      ),
                     ),
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
           ),
           Padding(
@@ -353,7 +556,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  character.name,
+                  character.name.isEmpty ? '이름 없는 캐릭터' : character.name,
                   style: const TextStyle(
                     color: Colors.black,
                     fontSize: 16,
@@ -362,15 +565,36 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  character.prompt,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
+                const SizedBox(height: 12),
+                // 선택 버튼 추가
+                SizedBox(
+                  width: double.infinity,
+                  height: 36,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await _selectCharacter(character);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isSelected ? Colors.black : Colors.white,
+                      foregroundColor: isSelected ? Colors.white : Colors.black,
+                      side: BorderSide(
+                        color: Colors.black,
+                        width: 1.5,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      isSelected ? '✓ 선택됨' : '선택하기',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -388,14 +612,34 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildSectionTitle('캐릭터 타입'),
+            _buildSectionTitle('캐릭터 이름'),
             const SizedBox(height: 12),
-            _buildCharacterTypeSelector(),
-            const SizedBox(height: 24),
-            
-            _buildSectionTitle('스타일'),
-            const SizedBox(height: 12),
-            _buildStyleSelector(),
+            TextField(
+              controller: _nameController,
+              style: const TextStyle(color: Colors.black),
+              decoration: InputDecoration(
+                hintText: '캐릭터 이름을 입력해주세요',
+                hintStyle: TextStyle(color: Colors.grey[400]),
+                filled: true,
+                fillColor: Colors.grey[50],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[200]!),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[200]!),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.black),
+                ),
+                contentPadding: const EdgeInsets.all(16),
+                prefixIcon: const Icon(Icons.badge_outlined, color: Colors.grey),
+              ),
+              maxLength: 20,
+              maxLines: 1,
+            ),
             const SizedBox(height: 24),
             
             _buildSectionTitle('프롬프트'),
@@ -454,18 +698,6 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
                       ),
                     ),
             ),
-            
-            if (_usageStats != null) ...[
-              const SizedBox(height: 24),
-              Text(
-                '오늘 생성 가능: ${_usageStats!['remaining_today'] ?? 0}회',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 14,
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -483,59 +715,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     );
   }
 
-  Widget _buildCharacterTypeSelector() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: _characterTypes.entries.map((entry) {
-        final isSelected = _selectedCharacterType == entry.key;
-        return ChoiceChip(
-          label: Text(entry.value),
-          selected: isSelected,
-          onSelected: (selected) {
-            if (selected) {
-              setState(() {
-                _selectedCharacterType = entry.key;
-              });
-            }
-          },
-          backgroundColor: Colors.grey[50],
-          selectedColor: Colors.black,
-          labelStyle: TextStyle(
-            color: isSelected ? Colors.white : Colors.black,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
-        );
-      }).toList(),
-    );
-  }
 
-  Widget _buildStyleSelector() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: _styleTypes.entries.map((entry) {
-        final isSelected = _selectedStyle == entry.key;
-        return ChoiceChip(
-          label: Text(entry.value),
-          selected: isSelected,
-          onSelected: (selected) {
-            if (selected) {
-              setState(() {
-                _selectedStyle = entry.key;
-              });
-            }
-          },
-          backgroundColor: Colors.grey[50],
-          selectedColor: Colors.black,
-          labelStyle: TextStyle(
-            color: isSelected ? Colors.white : Colors.black,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
-        );
-      }).toList(),
-    );
-  }
 
   void _showErrorDialog(String message) {
     showDialog(

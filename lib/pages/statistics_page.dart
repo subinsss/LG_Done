@@ -51,73 +51,54 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+    _statisticsService = StatisticsService();
+    _firestoreService = FirestoreTodoService();
+    _listenToCategoryColors();
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging) {
+        setState(() {
+          // 데이터 초기화
+          switch (_tabController.index) {
+            case 0: // 일간
+              _dailyData = null;
+              break;
+            case 1: // 주간
+              _weeklyData = [];
+              break;
+            case 2: // 월간
+              _monthlyData = [];
+              break;
+            case 3: // 연간
+              _yearlyData = [];
+              break;
+          }
+          // UI 업데이트를 위한 상태 초기화
+          _isLoading = true;
+          _errorMessage = null;
+          _isOfflineMode = false;
+        });
+        // 새로운 데이터 로드
+        _loadStatistics();
+      }
+    });
+    _progressController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
+    _progressAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _progressController, curve: Curves.easeInOut),
+    );
     
-    try {
-      _tabController = TabController(length: 4, vsync: this);
-      _statisticsService = StatisticsService();
-      _firestoreService = FirestoreTodoService();
-      
-      // 서비스 초기화 확인
-      final firestore = FirebaseFirestore.instance;
-      _statisticsService.initialize(firestore);
-      _firestoreService.initialize(firestore);
-      
-      _listenToCategoryColors();
-      _tabController.addListener(() {
-        if (_tabController.indexIsChanging) {
-          setState(() {
-            // 데이터 초기화
-            switch (_tabController.index) {
-              case 0: // 일간
-                _dailyData = null;
-                break;
-              case 1: // 주간
-                _weeklyData = [];
-                break;
-              case 2: // 월간
-                _monthlyData = [];
-                break;
-              case 3: // 연간
-                _yearlyData = [];
-                break;
-            }
-            // UI 업데이트를 위한 상태 초기화
-            _isLoading = true;
-            _errorMessage = null;
-            _isOfflineMode = false;
-          });
-          // 새로운 데이터 로드
-          _loadStatistics();
-        }
-      });
-      
-      _progressController = AnimationController(
-        duration: const Duration(milliseconds: 1500),
-        vsync: this,
-      );
-      _progressAnimation = Tween<double>(begin: 0, end: 1).animate(
-        CurvedAnimation(parent: _progressController, curve: Curves.easeInOut),
-      );
-      
-      // 모든 날짜를 오늘로 초기화
-      DateTime today = DateTime.now();
-      _selectedDay = today;
-      _selectedWeek = today;
-      _selectedMonth = DateTime(today.year, today.month, 1);
-      _selectedYear = DateTime(today.year, 1, 1);
-      
-      print('📊 통계 페이지 초기화 완료');
-      _loadStatistics();
-      _progressController.forward();
-      
-    } catch (e) {
-      print('❌ 통계 페이지 초기화 오류: $e');
-      setState(() {
-        _isLoading = false;
-        _isOfflineMode = true;
-        _errorMessage = '통계 페이지를 초기화할 수 없습니다: $e';
-      });
-    }
+    // 모든 날짜를 오늘로 초기화
+    DateTime today = DateTime.now();
+    _selectedDay = today;
+    _selectedWeek = today;
+    _selectedMonth = DateTime(today.year, today.month, 1);
+    _selectedYear = DateTime(today.year, 1, 1);
+    
+    _loadStatistics();
+    _progressController.forward();
   }
 
   @override
@@ -1230,14 +1211,14 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                       children: [
                         Icon(
                           Icons.calendar_today,
-                          size: 10,
+                          size: 12,
                           color: Colors.black,
                         ),
                         const SizedBox(width: 6),
                         Text(
                           _getDateRangeText(period),
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 14,
                             fontWeight: FontWeight.bold,
                             color: Colors.black,
                           ),
@@ -1261,14 +1242,14 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                         children: [
                           Icon(
                             Icons.today,
-                            size: 8,
+                            size: 10,
                             color: Colors.black,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             '오늘',
                             style: TextStyle(
-                              fontSize: 6,
+                              fontSize: 8,
                               fontWeight: FontWeight.w500,
                               color: Colors.black,
                             ),
@@ -1924,7 +1905,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                       Text(
                         '$dayNumber',
                         style: TextStyle(
-                          fontSize: 5,
+                          fontSize: 7,
                           color: dayData != null 
                               ? Colors.grey.shade600 
                               : Colors.grey.shade400,
@@ -2827,35 +2808,22 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
 
   // Firestore에서 카테고리 색상 실시간 감지
   void _listenToCategoryColors() {
-    try {
-      if (_firestoreService != null) {
-        _categoryColorsSubscription = _firestoreService.getCategoryColorsStream().listen(
-          (categoryColors) {
-            if (mounted) {
-              setState(() {
-                _categoryColors = categoryColors.map(
-                  (key, value) => MapEntry(key, Color(value)),
-                );
-              });
-              print('✅ 카테고리 색상 실시간 업데이트: $categoryColors');
-            }
-          },
-          onError: (error) {
-            print('❌ 카테고리 색상 스트림 오류: $error');
-            if (mounted) {
-              setState(() {
-                _categoryColors = {};
-              });
-            }
-          },
-        );
-      }
-    } catch (e) {
-      print('❌ 카테고리 색상 리스너 초기화 오류: $e');
-      setState(() {
-        _categoryColors = {};
-      });
-    }
+    _categoryColorsSubscription = _firestoreService.getCategoryColorsStream().listen(
+      (categoryColors) {
+        setState(() {
+          _categoryColors = categoryColors.map(
+            (key, value) => MapEntry(key, Color(value)),
+          );
+        });
+        print('✅ 카테고리 색상 실시간 업데이트: $categoryColors');
+      },
+      onError: (error) {
+        print('❌ 카테고리 색상 스트림 오류: $error');
+        setState(() {
+          _categoryColors = {};
+        });
+      },
+    );
   }
 }
 

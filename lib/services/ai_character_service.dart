@@ -34,6 +34,7 @@ class AICharacterService {
   // 프롬프트로 이미지 생성 (로그 최소화)
   static Future<Map<String, dynamic>?> generateImageFromPrompt({
     required String prompt,
+    String? name,
     String style = 'anime',
   }) async {
     try {
@@ -42,7 +43,9 @@ class AICharacterService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'prompt': prompt,
+          'name': name,
           'style': style,
+          'is_selected': false, // 기본값으로 선택되지 않은 상태
         }),
       ).timeout(const Duration(minutes: 5)); // 타임아웃 5분으로 늘리기
       
@@ -192,6 +195,7 @@ class AICharacter {
   final String imageUrl; // 단일 이미지 URL
   final DateTime? createdAt;
   final String type;
+  final bool isSelected;
   
   AICharacter({
     required this.characterId,
@@ -202,6 +206,7 @@ class AICharacter {
     required this.imageUrl,
     this.createdAt,
     required this.type,
+    this.isSelected = false,
   });
   
   factory AICharacter.fromJson(Map<String, dynamic> json) {
@@ -216,10 +221,11 @@ class AICharacter {
           ? (json['created_at'] as Timestamp).toDate()
           : null,
       type: json['type'] ?? 'custom',
+      isSelected: json['is_selected'] ?? false,
     );
   }
   
-  Map<String, dynamic> toJson() {
+    Map<String, dynamic> toJson() {
     return {
       'character_id': characterId,
       'user_id': userId,
@@ -229,6 +235,7 @@ class AICharacter {
       'image_url': imageUrl,
       'created_at': createdAt,
       'type': type,
+      'is_selected': isSelected,
     };
   }
 } 

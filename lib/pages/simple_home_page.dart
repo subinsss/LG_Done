@@ -111,7 +111,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
 
   bool _isDataLoading = false;
 
-  StreamSubscription<QuerySnapshot>? _selectedCharacterSubscription;
+  StreamSubscription<DocumentSnapshot>? _selectedCharacterSubscription;
   StreamSubscription<Map<String, dynamic>>? _profileSubscription;
   
   // 프로필 정보
@@ -279,23 +279,31 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   // 🔥 Firestore에서 선택된 캐릭터 실시간 감지
   void _listenToSelectedCharacter() {
     _selectedCharacterSubscription = FirebaseFirestore.instance
-        .collection('characters')
-        .where('is_selected', isEqualTo: true)
-        .limit(1)
+        .collection('users')
+        .doc('anonymous_user')
         .snapshots()
         .listen((snapshot) {
-      if (snapshot.docs.isNotEmpty) {
-        final characterData = snapshot.docs.first.data();
-        setState(() {
-          _selectedAICharacter = {
-            'character_id': snapshot.docs.first.id,
-            'name': characterData['name'] ?? '이름 없음',
-            'image_url': characterData['image_url'] ?? '',
-            'prompt': characterData['prompt'] ?? '',
-            'is_selected': characterData['is_selected'] ?? false,
-          };
-        });
-        print('✅ 선택된 캐릭터 실시간 업데이트: ${characterData['name']}');
+      if (snapshot.exists && snapshot.data() != null) {
+        final userData = snapshot.data()!;
+        final selectedCharacter = userData['selected_character'];
+        
+        if (selectedCharacter != null) {
+          setState(() {
+            _selectedAICharacter = {
+              'character_id': selectedCharacter['character_id'] ?? '',
+              'name': selectedCharacter['name'] ?? '이름 없음',
+              'image_url': selectedCharacter['image_url'] ?? '',
+              'prompt': selectedCharacter['prompt'] ?? '',
+              'selected_at': selectedCharacter['selected_at'] ?? '',
+            };
+          });
+          print('✅ 선택된 캐릭터 실시간 업데이트: ${selectedCharacter['name']}');
+        } else {
+          setState(() {
+            _selectedAICharacter = null;
+          });
+          print('📝 선택된 캐릭터 없음 - 기본 이모지 사용');
+        }
       } else {
         setState(() {
           _selectedAICharacter = null;
@@ -3446,29 +3454,53 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
 
   // 일시정지 시간 계산
   int _calculatePausedTime(TodoItem todo) {
-    // pause_times와 resume_times 둘 다 값이 없으면 쉬는시간 없음
-    bool hasValidPauseData = todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty;
-    bool hasValidResumeData = todo.resumeTimes != null && todo.resumeTimes!.isNotEmpty;
+    bool hasValidPauseData = todo.pauseTimes != null && 
+                             todo.pauseTimes!.isNotEmpty &&
+                             todo.pauseTimes!.any((time) => time.trim().isNotEmpty);
+    bool hasValidResumeData = todo.resumeTimes != null && 
+                              todo.resumeTimes!.isNotEmpty &&
+                              todo.resumeTimes!.any((time) => time.trim().isNotEmpty);
     
-    if (!hasValidPauseData || !hasValidResumeData || todo.pauseTimes!.length <= 1) {
+    // if문1,2: pause_times, resume_times 둘다 없거나, pause_times만 있고 resume_times가 없으면 쉬는시간 없음
+    if (!hasValidPauseData || !hasValidResumeData) {
       return 0;
     }
     
+    // if문3,4: 둘다 있을 때 처리
     int pausedMinutes = 0;
     int pauseCount = todo.pauseTimes!.length;
     int resumeCount = todo.resumeTimes!.length;
-    int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
     
-    for (int i = 0; i < pairCount; i++) {
-      try {
-        DateTime pauseTime = _parseTime(todo.pauseTimes![i]);
-        DateTime resumeTime = _parseTime(todo.resumeTimes![i]);
-        int restMinutes = resumeTime.difference(pauseTime).inMinutes;
-        if (restMinutes > 0) {
-          pausedMinutes += restMinutes;
+    // if문4: 둘다 있고 리스트 len이 같으면 인덱스별로 매칭
+    if (pauseCount == resumeCount) {
+      for (int i = 0; i < pauseCount; i++) {
+        try {
+          DateTime pauseTime = _parseTime(todo.pauseTimes![i]);
+          DateTime resumeTime = _parseTime(todo.resumeTimes![i]);
+          int restMinutes = resumeTime.difference(pauseTime).inMinutes;
+          if (restMinutes > 0) {
+            pausedMinutes += restMinutes;
+          }
+        } catch (e) {
+          // 무시
         }
-      } catch (e) {
-        // 무시
+      }
+    }
+    // if문3: 둘다 있지만 값 리스트 len이 다르면
+    else {
+      // 작은 쪽 개수만큼 쉬는시간 계산
+      int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
+      for (int i = 0; i < pairCount; i++) {
+        try {
+          DateTime pauseTime = _parseTime(todo.pauseTimes![i]);
+          DateTime resumeTime = _parseTime(todo.resumeTimes![i]);
+          int restMinutes = resumeTime.difference(pauseTime).inMinutes;
+          if (restMinutes > 0) {
+            pausedMinutes += restMinutes;
+          }
+        } catch (e) {
+          // 무시
+        }
       }
     }
     
@@ -3544,21 +3576,40 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       ));
     }
 
-    // 2. 쉬는 시간 처리 (pause_times와 resume_times 둘 다 값이 있을 때만 표시)
+    // 2. 쉬는 시간 처리
     bool hasValidPauseData = todo.pauseTimes != null && 
-                             todo.pauseTimes!.isNotEmpty;
+                             todo.pauseTimes!.isNotEmpty &&
+                             todo.pauseTimes!.any((time) => time.trim().isNotEmpty);
     bool hasValidResumeData = todo.resumeTimes != null && 
-                              todo.resumeTimes!.isNotEmpty;
+                              todo.resumeTimes!.isNotEmpty &&
+                              todo.resumeTimes!.any((time) => time.trim().isNotEmpty);
     
-    if (hasValidPauseData && hasValidResumeData && todo.pauseTimes!.length > 1) {
+    // if문1,2: pause_times, resume_times 둘다 없거나, pause_times만 있고 resume_times가 없으면 쉬는시간 없음
+    if (!hasValidPauseData || !hasValidResumeData) {
+      // 쉬는시간 없음
+    }
+    // if문3,4: 둘다 있을 때 처리
+    else {
       int pauseCount = todo.pauseTimes!.length;
       int resumeCount = todo.resumeTimes!.length;
-      int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
       
-      for (int i = 0; i < pairCount; i++) {
-        String pauseTime = todo.pauseTimes![i];
-        String resumeTime = todo.resumeTimes![i];
-        timelineItems.add(_buildRestTimeItem(pauseTime, resumeTime));
+      // if문4: 둘다 있고 리스트 len이 같으면 인덱스별로 매칭시켜서 쉬는시간에 넣기
+      if (pauseCount == resumeCount) {
+        for (int i = 0; i < pauseCount; i++) {
+          String pauseTime = todo.pauseTimes![i];
+          String resumeTime = todo.resumeTimes![i];
+          timelineItems.add(_buildRestTimeItem(pauseTime, resumeTime));
+        }
+      }
+      // if문3: 둘다 있지만 값 리스트 len이 다르면 pause_times의 마지막 인덱스가 종료시간
+      else {
+        // 작은 쪽 개수만큼 쉬는시간 표시
+        int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
+        for (int i = 0; i < pairCount; i++) {
+          String pauseTime = todo.pauseTimes![i];
+          String resumeTime = todo.resumeTimes![i];
+          timelineItems.add(_buildRestTimeItem(pauseTime, resumeTime));
+        }
       }
     }
 
@@ -3566,22 +3617,31 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     String? endTime;
     String endLabel = '완료';
     
-    if (hasValidPauseData && hasValidResumeData && todo.pauseTimes!.length > 1) {
+    // 위에서 정의한 hasValidPauseData, hasValidResumeData 변수 재사용
+    // if문1,2: pause_times, resume_times 둘다 없거나, pause_times만 있고 resume_times가 없으면
+    if (!hasValidPauseData || !hasValidResumeData) {
+      if (todo.stopTime != null) {
+        endTime = todo.stopTime!;
+        endLabel = '완료';
+      }
+    }
+    // if문3,4: 둘다 있을 때 처리
+    else {
       int pauseCount = todo.pauseTimes!.length;
       int resumeCount = todo.resumeTimes!.length;
       
+      // if문3: 둘다 있지만 값 리스트 len이 다르면 pause_times의 마지막 인덱스가 종료시간
       if (pauseCount != resumeCount) {
         endTime = todo.pauseTimes!.last;
         endLabel = '완료';
-      } else {
+      }
+      // if문4: 둘다 있고 리스트 len이 같으면
+      else {
         if (todo.stopTime != null) {
           endTime = todo.stopTime!;
           endLabel = '완료';
         }
       }
-    } else if (todo.stopTime != null) {
-      endTime = todo.stopTime!;
-      endLabel = '완료';
     }
 
     if (endTime != null) {
