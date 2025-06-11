@@ -529,6 +529,159 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
+        IconButton(
+          onPressed: _showUserInfoDialog,
+          icon: const Icon(
+            Icons.account_circle,
+            color: Colors.grey,
+            size: 28,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showUserInfoDialog() {
+    final user = FirebaseAuth.instance.currentUser;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.person, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('프로필 정보', style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 프로필 이미지
+                Center(
+                  child: CircleAvatar(
+                    radius: 50,
+                    backgroundColor: Colors.grey.shade300,
+                    backgroundImage: user?.photoURL != null
+                        ? NetworkImage(user!.photoURL!)
+                        : null,
+                    child: user?.photoURL == null
+                        ? const Icon(
+                            Icons.person,
+                            size: 50,
+                            color: Colors.white,
+                          )
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                
+                // 기본 정보 섹션
+                const Text(
+                  '기본 정보',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildInfoRow('이름', user?.displayName ?? '설정되지 않음'),
+                      const SizedBox(height: 12),
+                      _buildInfoRow('이메일', user?.email ?? '설정되지 않음'),
+                      const SizedBox(height: 12),
+                      _buildInfoRow('사용자 ID', user?.uid.substring(0, 8) ?? '정보 없음'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                
+                // 계정 정보 섹션
+                const Text(
+                  '계정 정보',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildInfoRow('계정 유형', _isPremium ? '프리미엄' : '기본'),
+                      const SizedBox(height: 12),
+                      _buildInfoRow('가입일', user?.metadata.creationTime != null 
+                          ? '${user!.metadata.creationTime!.year}년 ${user.metadata.creationTime!.month}월 ${user.metadata.creationTime!.day}일'
+                          : '정보 없음'),
+                      const SizedBox(height: 12),
+                      _buildInfoRow('최근 로그인', user?.metadata.lastSignInTime != null 
+                          ? '${user!.metadata.lastSignInTime!.year}년 ${user.metadata.lastSignInTime!.month}월 ${user.metadata.lastSignInTime!.day}일'
+                          : '정보 없음'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                '닫기',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 60,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              color: Colors.grey,
+            ),
+          ),
+        ),
+        const Text(': ', style: TextStyle(color: Colors.grey)),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
       ],
     );
   }

@@ -379,6 +379,9 @@ class _SettingPageState extends State<SettingPage> with SingleTickerProviderStat
             value: value,
             onChanged: onChanged,
             activeColor: const Color(0xFF2465D9),
+            activeTrackColor: Colors.white,
+            inactiveThumbColor: Colors.white,
+            inactiveTrackColor: Colors.grey.shade300,
           ),
         ],
       ),
@@ -453,14 +456,18 @@ class _SettingPageState extends State<SettingPage> with SingleTickerProviderStat
   // 다크 모드 전환
   void _toggleDarkMode() {
     if (_isDarkMode) {
-      // 앱 테마를 다크 모드로 변경 - 실제 구현은 앱 상위 레벨에서 이루어져야 함
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('다크 모드가 활성화되었습니다. 앱을 재시작하면 적용됩니다.')),
+        const SnackBar(
+          content: Text('다크 모드는 향후 업데이트에서 지원될 예정입니다.'),
+          backgroundColor: Colors.orange,
+        ),
       );
     } else {
-      // 앱 테마를 라이트 모드로 변경 - 실제 구현은 앱 상위 레벨에서 이루어져야 함
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('라이트 모드가 활성화되었습니다. 앱을 재시작하면 적용됩니다.')),
+        const SnackBar(
+          content: Text('라이트 모드로 설정되었습니다.'),
+          backgroundColor: Colors.green,
+        ),
       );
     }
   }

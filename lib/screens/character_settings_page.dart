@@ -508,23 +508,10 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
               children: [
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                  child: Image.network(
-                    character.imageUrl,
-                    fit: BoxFit.cover,
+                  child: Container(
                     width: double.infinity,
                     height: double.infinity,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Center(
-                        child: CircularProgressIndicator(
-                          color: Colors.black,
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded /
-                                  loadingProgress.expectedTotalBytes!
-                              : null,
-                        ),
-                      );
-                    },
+                    child: _buildCharacterImage(character),
                   ),
                 ),
                 // 삭제 버튼 (우상단)
@@ -597,6 +584,88 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 캐릭터 이미지 빌더 (Base64/네트워크 이미지 구분 처리)
+  Widget _buildCharacterImage(AICharacter character) {
+    final imageUrl = character.imageUrl;
+    
+    // Base64 이미지인지 확인
+    if (imageUrl.startsWith('data:image/')) {
+      try {
+        final base64String = imageUrl.split(',')[1];
+        final Uint8List bytes = base64Decode(base64String);
+        
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          cacheWidth: 400, // 메모리 사용량 최적화
+          cacheHeight: 400,
+          errorBuilder: (context, error, stackTrace) {
+            print('Base64 이미지 로딩 오류: $error');
+            return _buildErrorImage();
+          },
+        );
+      } catch (e) {
+        print('Base64 디코딩 오류: $e');
+        return _buildErrorImage();
+      }
+    } else {
+      // 네트워크 이미지
+      return Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        cacheWidth: 400, // 메모리 사용량 최적화
+        cacheHeight: 400,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              color: Colors.black,
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                      loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          print('네트워크 이미지 로딩 오류: $error');
+          return _buildErrorImage();
+        },
+      );
+    }
+  }
+
+  // 에러 시 표시할 기본 이미지
+  Widget _buildErrorImage() {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.grey.shade200,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.broken_image,
+            size: 48,
+            color: Colors.grey.shade400,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '이미지 로딩 실패',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 12,
             ),
           ),
         ],

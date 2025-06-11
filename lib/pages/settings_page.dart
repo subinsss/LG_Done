@@ -93,6 +93,17 @@ class _SettingsPageState extends State<SettingsPage> {
                       });
                     },
                     activeColor: Colors.black,
+                    activeTrackColor: Colors.grey.shade300,
+                    inactiveThumbColor: Colors.white,
+                    inactiveTrackColor: Colors.grey.shade300,
+                    trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+                    thumbIcon: WidgetStateProperty.resolveWith<Icon?>((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return const Icon(Icons.circle, color: Colors.black, size: 16);
+                      }
+                      return const Icon(Icons.circle, color: Colors.white, size: 16);
+                    }),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
                 _buildDivider(),
@@ -126,13 +137,25 @@ class _SettingsPageState extends State<SettingsPage> {
                         _darkModeEnabled = value;
                       });
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('다크 모드는 향후 업데이트에서 지원될 예정입니다.'),
-                          duration: Duration(seconds: 2),
+                        SnackBar(
+                          content: Text(value ? '다크 모드는 향후 업데이트에서 지원될 예정입니다.' : '라이트 모드로 설정되었습니다.'),
+                          backgroundColor: value ? Colors.orange : Colors.green,
+                          duration: const Duration(seconds: 2),
                         ),
                       );
                     },
                     activeColor: Colors.black,
+                    activeTrackColor: Colors.grey.shade300,
+                    inactiveThumbColor: Colors.white,
+                    inactiveTrackColor: Colors.grey.shade300,
+                    trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+                    thumbIcon: WidgetStateProperty.resolveWith<Icon?>((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return const Icon(Icons.circle, color: Colors.black, size: 16);
+                      }
+                      return const Icon(Icons.circle, color: Colors.white, size: 16);
+                    }),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
               ],
