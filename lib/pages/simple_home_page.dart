@@ -2260,7 +2260,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
             appBar: AppBar(
         toolbarHeight: 60,  // 앱바 높이 줄임
         title: Padding(
-          padding: const EdgeInsets.only(left: 20), // 오른쪽으로 이동
+          padding: const EdgeInsets.only(left: 40), // 오른쪽으로 더 이동
           child: Image.asset(
             'assets/icon/life guide logo.png',
             fit: BoxFit.contain,
@@ -2284,51 +2284,6 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         elevation: 0,
         centerTitle: true,
         actions: [
-          // 새로고침 버튼 추가
-          IconButton(
-            onPressed: () async {
-              print('🔄 수동 새로고침 시작 - 모든 스트림 재연결');
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('모든 데이터를 새로고침하고 있습니다...'),
-                  duration: Duration(seconds: 2),
-                  backgroundColor: Colors.blue,
-                ),
-              );
-              
-              // 모든 스트림 재연결
-              _todosSubscription?.cancel();
-              _categoriesSubscription?.cancel();
-              _categoryColorsSubscription?.cancel();
-              _selectedCharacterSubscription?.cancel();
-              _profileSubscription?.cancel();
-              
-              // 약간의 지연 후 재연결
-              await Future.delayed(const Duration(milliseconds: 500));
-              
-              if (mounted) {
-                _listenToTodos();
-                _listenToCategories();
-                _listenToCategoryColors();
-                _listenToSelectedCharacter();
-                _listenToProfile();
-                
-                print('✅ 모든 스트림 재연결 완료');
-                
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('새로고침 완료!'),
-                    duration: Duration(seconds: 1),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-            },
-            icon: const Icon(Icons.refresh),
-            color: Colors.black,
-            tooltip: '새로고침',
-          ),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: _buildProfileIcon(),
@@ -3767,22 +3722,27 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     );
   }
 
-  // 쉬는 시간 계산
+  // 쉬는 시간 계산 (초 단위 표시)
   String _calculateRestDuration(String startTime, String endTime) {
     try {
       DateTime start = _parseTime(startTime);
       DateTime end = _parseTime(endTime);
-      int minutes = end.difference(start).inMinutes;
+      int totalSeconds = end.difference(start).inSeconds;
       
-      if (minutes < 60) {
-        return '${minutes}분';
+      if (totalSeconds < 60) {
+        return '${totalSeconds}초';
+      } else if (totalSeconds < 3600) {
+        int minutes = totalSeconds ~/ 60;
+        int seconds = totalSeconds % 60;
+        return '${minutes}분 ${seconds}초';
       } else {
-        int hours = minutes ~/ 60;
-        int remainingMinutes = minutes % 60;
-        return '${hours}시간 ${remainingMinutes}분';
+        int hours = totalSeconds ~/ 3600;
+        int minutes = (totalSeconds % 3600) ~/ 60;
+        int seconds = totalSeconds % 60;
+        return '${hours}시간 ${minutes}분 ${seconds}초';
       }
     } catch (e) {
-      return '?분';
+      return '0초';
     }
   }
 } 
