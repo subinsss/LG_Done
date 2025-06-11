@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/profile_service.dart';
 import 'profile_edit_page.dart';
+import '../data/character.dart';
 
 class SimpleHomePage extends StatefulWidget {
   const SimpleHomePage({super.key});
@@ -1120,49 +1121,68 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   }
   
   Widget _buildDefaultCharacter() {
-    // 선택한 날짜의 할일만 필터링해서 감정 결정
-    final selectedDateTodos = _todos.where((todo) {
-      if (todo.dueDate == null) return false;
-      return isSameDay(todo.dueDate!, _selectedDay);
-    }).toList();
-
-    int completedCount = selectedDateTodos.where((todo) => todo.isCompleted).length;
-    double completionRate = selectedDateTodos.isEmpty ? 0 : completedCount / selectedDateTodos.length;
+    // 기본 캐릭터 이미지 표시 (Character 클래스의 getDefaultCharacter 사용)
+    final defaultCharacter = Character.getDefaultCharacter();
     
-    final characterData = _availableCharacters[_selectedCharacter]!;
-    String characterDisplay;
-    
-    if (completionRate >= 0.8) {
-      characterDisplay = characterData['type'] == 'emoji' ? characterData['happy'] : characterData['path'];
-    } else if (completionRate >= 0.5) {
-      characterDisplay = characterData['type'] == 'emoji' ? characterData['working'] : characterData['path'];
-    } else if (completionRate > 0) {
-      characterDisplay = characterData['type'] == 'emoji' ? characterData['starting'] : characterData['path'];
-    } else {
-      characterDisplay = characterData['type'] == 'emoji' ? characterData['normal'] : characterData['path'];
-    }
-    
-    if (characterData['type'] == 'emoji') {
-      return Text(
-        characterDisplay,
-        style: const TextStyle(fontSize: 100),
-        textAlign: TextAlign.center,
-      );
-    } else {
-      return Container(
-        width: 150,
-        height: 150,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(75),
-          color: Colors.grey.shade200,
+    return Container(
+      width: 200,
+      height: 200,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(100),
+        child: Image.network(
+          defaultCharacter.networkImageUrl!,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(100),
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            print('기본 캐릭터 이미지 로딩 오류: $error');
+            // 이미지 로딩 실패 시 이모지 대신 예쁜 기본 아바타 표시
+            return Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.blue.shade300,
+                    Colors.blue.shade400,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(100),
+              ),
+              child: const Icon(
+                Icons.person,
+                size: 100,
+                color: Colors.white,
+              ),
+            );
+          },
         ),
-        child: Icon(
-          Icons.person,
-          size: 75,
-          color: Colors.grey.shade400,
-        ),
-      );
-    }
+      ),
+    );
   }
 
   Widget _buildQuickStats() {
@@ -1448,11 +1468,25 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
           margin: const EdgeInsets.only(bottom: 20),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: Colors.grey.shade200,
+              color: Colors.grey.shade100,
               width: 1,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
+                spreadRadius: 0,
+              ),
+              BoxShadow(
+                color: _getCategoryColor(category).withOpacity(0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+                spreadRadius: 0,
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1465,14 +1499,29 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                   });
                 },
                 child: Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
-                    color: _getCategoryColor(category).withOpacity(0.1),
+                    gradient: LinearGradient(
+                      colors: [
+                        _getCategoryColor(category).withOpacity(0.15),
+                        _getCategoryColor(category).withOpacity(0.08),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular((_categoryCollapsed[category] ?? false) ? 16 : 0),
-                      bottomRight: Radius.circular((_categoryCollapsed[category] ?? false) ? 16 : 0),
+                      topLeft: const Radius.circular(20),
+                      topRight: const Radius.circular(20),
+                      bottomLeft: Radius.circular((_categoryCollapsed[category] ?? false) ? 20 : 0),
+                      bottomRight: Radius.circular((_categoryCollapsed[category] ?? false) ? 20 : 0),
+                    ),
+                    border: Border(
+                      bottom: (_categoryCollapsed[category] ?? false) 
+                        ? BorderSide.none 
+                        : BorderSide(
+                            color: _getCategoryColor(category).withOpacity(0.1),
+                            width: 1,
+                          ),
                     ),
                   ),
                   child: Row(
@@ -1483,10 +1532,17 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                           children: [
                             // 접기/펼치기 아이콘
                             Container(
-                              padding: const EdgeInsets.all(4),
+                              padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: Colors.white,
-                                borderRadius: BorderRadius.circular(6),
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _getCategoryColor(category).withOpacity(0.2),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: Icon(
                                 (_categoryCollapsed[category] ?? false) 
@@ -1498,11 +1554,25 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                             ),
                             const SizedBox(width: 12),
                             Container(
-                              width: 12,
-                              height: 12,
+                              width: 14,
+                              height: 14,
                               decoration: BoxDecoration(
-                                color: _getCategoryColor(category),
+                                gradient: LinearGradient(
+                                  colors: [
+                                    _getCategoryColor(category),
+                                    _getCategoryColor(category).withOpacity(0.8),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
                                 shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _getCategoryColor(category).withOpacity(0.3),
+                                    blurRadius: 3,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -1519,10 +1589,21 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                             ),
                             const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: _getCategoryColor(category).withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(10),
+                                gradient: LinearGradient(
+                                  colors: [
+                                    _getCategoryColor(category).withOpacity(0.25),
+                                    _getCategoryColor(category).withOpacity(0.15),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: _getCategoryColor(category).withOpacity(0.3),
+                                  width: 0.5,
+                                ),
                               ),
                               child: Text(
                                 '${categoryTodos.length}',
@@ -2259,8 +2340,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       backgroundColor: Colors.white,
             appBar: AppBar(
         toolbarHeight: 60,  // 앱바 높이 줄임
-        title: Padding(
-          padding: const EdgeInsets.only(left: 40), // 오른쪽으로 더 이동
+        title: Center(
           child: Image.asset(
             'assets/icon/life guide logo.png',
             fit: BoxFit.contain,
