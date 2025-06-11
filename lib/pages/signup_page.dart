@@ -39,10 +39,10 @@ class _SignUpPageState extends State<SignUpPage> {
             children: [
               ListView(
                 children: [
-                  Image.asset(
-                    'assets/done_logo.png',
-                    width: 200,
-                  ),
+                                      Image.asset(
+                      'assets/icon/life guide logo.png',
+                      width: 220,
+                    ),
                   Container(height: 26),
                   Text(
                     '친구들의 사진과 동영상을 보려면\n가입하세요.',

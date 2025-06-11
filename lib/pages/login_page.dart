@@ -40,10 +40,10 @@ class _LoginPageState extends State<LoginPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Spacer(),
-                Image.asset(
-                  'assets/done_logo.png',
-                  width: 200,
-                ),
+                                  Image.asset(
+                    'assets/icon/life guide logo.png',
+                    width: 220,
+                  ),
                 Container(height: 70),
                 _buildEmailField(),
                 Container(height: 16),

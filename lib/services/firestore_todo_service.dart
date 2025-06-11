@@ -16,6 +16,9 @@ class TodoItem {
   final String? stopTime;
   final List<String>? pauseTimes;
   final List<String>? resumeTimes;
+  
+  // 새로 추가할 필드들
+  final Timestamp? dueDateTimestamp; // timestamp 형식 날짜
 
   TodoItem({
     required this.id,
@@ -30,6 +33,7 @@ class TodoItem {
     this.stopTime,
     this.pauseTimes,
     this.resumeTimes,
+    this.dueDateTimestamp,
   });
 
   factory TodoItem.fromFirestore(DocumentSnapshot doc) {
@@ -145,6 +149,7 @@ class TodoItem {
       stopTime: data['stop_time'],
       pauseTimes: pauseTimes,
       resumeTimes: resumeTimes,
+      dueDateTimestamp: data['due_date'] as Timestamp?,
     );
   }
 
@@ -154,6 +159,7 @@ class TodoItem {
       'is_completed': isCompleted,
       'priority': priority,
       'due_date_string': dueDate != null ? DateFormat('yyyy-MM-dd').format(dueDate!) : null,
+      'due_date': dueDateTimestamp,
       'userId': userId,
       'category': category,
       'order': order,
@@ -201,9 +207,11 @@ class FirestoreTodoService {
     try {
       // 날짜를 문자열로 저장 (YYYY-MM-DD 형식)
       String? dateString;
+      Timestamp? dueDateTimestamp;
       if (dueDate != null) {
         final dateOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
         dateString = DateFormat('yyyy-MM-dd').format(dateOnly);
+        dueDateTimestamp = Timestamp.fromDate(dateOnly);
       }
       
       // 해당 카테고리와 날짜의 기존 할일 개수를 조회하여 순서 설정
@@ -221,6 +229,7 @@ class FirestoreTodoService {
         'is_completed': false,
         'priority': priority,
         'due_date_string': dateString,
+        'due_date': dueDateTimestamp,
         'userId': _userId,
         'category': category,
         'order': newOrder,
@@ -338,7 +347,7 @@ class FirestoreTodoService {
     });
   }
 
-  // 날짜별 할일 개수 가져오기 (캘린더 표시용) - 문자열 키 직접 사용
+  // 날짜별 할일 개수 가져오기 (캘린더 표시용) - 인덱스 없이 작동
   Future<Map<String, int>> getTodoCountsByMonth(DateTime month) async {
     try {
       if (_firestore == null) {
@@ -346,26 +355,26 @@ class FirestoreTodoService {
         return {};
       }
 
-      // 해당 월의 시작일과 끝일 계산
-      final startOfMonth = DateTime(month.year, month.month, 1);
-      final endOfMonth = DateTime(month.year, month.month + 1, 0);
-      
-      final startDateString = DateFormat('yyyy-MM-dd').format(startOfMonth);
-      final endDateString = DateFormat('yyyy-MM-dd').format(endOfMonth);
-      
-      print('📅 월별 할일 개수 조회: $startDateString ~ $endDateString');
+      print('📅 월별 할일 개수 조회 시작: ${month.year}-${month.month}');
       print('🔍 조회 조건: userId=$_userId, collection=$_collection');
       
+      // 인덱스 문제를 피하기 위해 userId만으로 모든 할일을 가져온 후 클라이언트에서 필터링
       final snapshot = await _firestore!
           .collection(_collection)
           .where('userId', isEqualTo: _userId)
-          .where('due_date_string', isGreaterThanOrEqualTo: startDateString)
-          .where('due_date_string', isLessThanOrEqualTo: endDateString)
           .get();
       
       print('📊 Firebase에서 가져온 문서 개수: ${snapshot.docs.length}');
       
-      // 날짜별 개수 집계 - 문자열 키 직접 사용
+      // 해당 월의 시작일과 끝일 계산
+      final startOfMonth = DateTime(month.year, month.month, 1);
+      final endOfMonth = DateTime(month.year, month.month + 1, 0);
+      final startDateString = DateFormat('yyyy-MM-dd').format(startOfMonth);
+      final endDateString = DateFormat('yyyy-MM-dd').format(endOfMonth);
+      
+      print('📅 필터링 범위: $startDateString ~ $endDateString');
+      
+      // 날짜별 개수 집계 - 클라이언트에서 필터링
       Map<String, int> todoCountsByDate = {};
       
       for (var doc in snapshot.docs) {
@@ -373,14 +382,13 @@ class FirestoreTodoService {
         final dateString = data['due_date_string'] as String?;
         final title = data['title'] as String? ?? 'Unknown';
         
-        print('📄 문서: $title, 날짜: $dateString');
-        
         if (dateString != null && dateString.isNotEmpty) {
-          // DateTime 변환 없이 바로 문자열 키로 카운팅
-          todoCountsByDate[dateString] = (todoCountsByDate[dateString] ?? 0) + 1;
-          print('  ✅ 날짜 $dateString 개수: ${todoCountsByDate[dateString]}');
-        } else {
-          print('  ⚠️ 날짜 문자열이 비어있음');
+          // 해당 월에 속하는 날짜인지 확인
+          if (dateString.compareTo(startDateString) >= 0 && 
+              dateString.compareTo(endDateString) <= 0) {
+            todoCountsByDate[dateString] = (todoCountsByDate[dateString] ?? 0) + 1;
+            print('📄 문서: $title, 날짜: $dateString (포함됨)');
+          }
         }
       }
       
@@ -407,6 +415,8 @@ class FirestoreTodoService {
       return false;
     }
   }
+
+
 
   // 할일 삭제 - Firestore에서 직접 삭제
   Future<bool> deleteTodo(String todoId) async {
@@ -443,6 +453,7 @@ class FirestoreTodoService {
       final originalDate = DateTime.parse(originalDateString);
       final nextDay = originalDate.add(Duration(days: 1));
       final nextDayString = DateFormat('yyyy-MM-dd').format(nextDay);
+      final nextDayTimestamp = Timestamp.fromDate(nextDay);
       
       print('📅 내일하기: ${originalDateString} → $nextDayString');
       
@@ -458,8 +469,8 @@ class FirestoreTodoService {
       
       await _firestore!.collection(_collection).doc(todoId).update({
         'due_date_string': nextDayString,
+        'due_date': nextDayTimestamp,
         'order': newOrder,
-        'updatedAt': FieldValue.serverTimestamp(),
       });
       
       print('✅ 할일을 내일로 이동: $todoId → $nextDayString (새 order: $newOrder)');
@@ -493,6 +504,7 @@ class FirestoreTodoService {
       final originalDate = DateTime.parse(originalDateString);
       final nextDay = originalDate.add(Duration(days: 1));
       final nextDayString = DateFormat('yyyy-MM-dd').format(nextDay);
+      final nextDayTimestamp = Timestamp.fromDate(nextDay);
       
       print('📅 내일 또하기: ${originalDateString} → $nextDayString');
       print('📋 복사할 할일: ${originalData['title']} (완료상태: ${originalData['is_completed'] ?? originalData['isCompleted']})');
@@ -512,6 +524,7 @@ class FirestoreTodoService {
       
       // 변경해야 할 필드들만 업데이트
       newTodoData['due_date_string'] = nextDayString;
+      newTodoData['due_date'] = nextDayTimestamp;
       newTodoData['is_completed'] = false; // 미완료로 초기화
       newTodoData['order'] = newOrder;
       
@@ -1196,11 +1209,13 @@ class FirestoreTodoService {
       // 날짜를 문자열로 저장 (YYYY-MM-DD 형식)
       final dateOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
       final dateString = DateFormat('yyyy-MM-dd').format(dateOnly);
+      final dueDateTimestamp = Timestamp.fromDate(dateOnly);
       
       await _firestore!.collection(_collection).doc(todoId).update({
         'title': title,
         'priority': priority,
         'due_date_string': dateString,
+        'due_date': dueDateTimestamp,
         'category': category,
       });
       

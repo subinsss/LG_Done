@@ -288,27 +288,39 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         final selectedCharacter = userData['selected_character'];
         
         if (selectedCharacter != null) {
-          setState(() {
-            _selectedAICharacter = {
-              'character_id': selectedCharacter['character_id'] ?? '',
-              'name': selectedCharacter['name'] ?? '이름 없음',
-              'image_url': selectedCharacter['image_url'] ?? '',
-              'prompt': selectedCharacter['prompt'] ?? '',
-              'selected_at': selectedCharacter['selected_at'] ?? '',
-            };
-          });
-          print('✅ 선택된 캐릭터 실시간 업데이트: ${selectedCharacter['name']}');
+          final newCharacterId = selectedCharacter['character_id'] ?? '';
+          final currentCharacterId = _selectedAICharacter?['character_id'] ?? '';
+          
+          // 캐릭터가 실제로 변경된 경우에만 업데이트
+          if (newCharacterId != currentCharacterId) {
+            setState(() {
+              _selectedAICharacter = {
+                'character_id': selectedCharacter['character_id'] ?? '',
+                'name': selectedCharacter['name'] ?? '이름 없음',
+                'image_url': selectedCharacter['image_url'] ?? '',
+                'prompt': selectedCharacter['prompt'] ?? '',
+                'selected_at': selectedCharacter['selected_at'] ?? '',
+              };
+            });
+            // 캐릭터 변경됨 (로그 제거)
+          }
         } else {
+          // 선택된 캐릭터가 null인 경우에만 업데이트
+          if (_selectedAICharacter != null) {
+            setState(() {
+              _selectedAICharacter = null;
+            });
+            // 선택된 캐릭터 제거됨 (로그 제거)
+          }
+        }
+      } else {
+        // 문서가 없는 경우에만 업데이트
+        if (_selectedAICharacter != null) {
           setState(() {
             _selectedAICharacter = null;
           });
-          print('📝 선택된 캐릭터 없음 - 기본 이모지 사용');
+          // 사용자 문서 없음 (로그 제거)
         }
-      } else {
-        setState(() {
-          _selectedAICharacter = null;
-        });
-        print('📝 선택된 캐릭터 없음 - 기본 이모지 사용');
       }
     }, onError: (error) {
       print('❌ 선택된 캐릭터 스트림 오류: $error');
@@ -629,10 +641,10 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
           if (mounted) {
             setState(() {
               _todos = todos;
+              // 선택된 날짜의 할일 개수를 캐시에도 반영
+              final selectedDateString = DateFormat('yyyy-MM-dd').format(_selectedDay);
+              _todoCountsByDate[selectedDateString] = todos.length;
             });
-            
-            // 할일 변경 시 캘린더 개수도 업데이트
-            _loadTodoCountsForMonth(_focusedDay);
           }
         },
         onError: (error) {
@@ -680,62 +692,25 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       final currentCount = _todoCountsByDate[dateString] ?? 0;
       final newCount = currentCount + change;
       
-      print('🔄 [_updateTodoCountForDate] $dateString: $currentCount → $newCount (변화: $change)');
-      
       if (newCount <= 0) {
         _todoCountsByDate.remove(dateString);
-        print('🗑️ [_updateTodoCountForDate] $dateString 제거됨 (0개 이하)');
       } else {
         _todoCountsByDate[dateString] = newCount;
-        print('✅ [_updateTodoCountForDate] $dateString 업데이트: $newCount개');
       }
     });
-    
-    print('📊 [_updateTodoCountForDate] 업데이트 후 전체 상태: $_todoCountsByDate');
   }
 
   // 월별 할일 개수 로드
   Future<void> _loadTodoCountsForMonth(DateTime month) async {
     try {
-      print('🔄 [_loadTodoCountsForMonth] 시작: ${DateFormat('yyyy-MM').format(month)}');
       final counts = await _firestoreService.getTodoCountsByMonth(month);
       
-      print('📊 [_loadTodoCountsForMonth] Firebase에서 받은 데이터: $counts');
-      
-      // 이제 Firebase에서 바로 문자열 키로 받아옴 (변환 불필요)
       setState(() {
         _todoCountsByDate = counts;
       });
-      print('📅 [_loadTodoCountsForMonth] 상태 업데이트 완료: ${counts.length}개 날짜');
-      
-      // 각 날짜별 개수 출력
-      counts.forEach((dateString, count) {
-        print('  📋 $dateString: $count개');
-      });
-      
-      // 6월 10일 특별 확인
-      final june10 = '2024-06-10';
-      if (counts.containsKey(june10)) {
-        print('🎯 [FOUND] 6월 10일 확인됨: ${counts[june10]}개 할일');
-      } else {
-        print('⚠️ [NOT FOUND] 6월 10일 데이터 없음');
-        // 6월 날짜들만 필터링해서 출력
-        final juneDates = counts.keys.where((key) => key.startsWith('2024-06')).toList();
-        print('🔍 [DEBUG] 6월 관련 날짜들: $juneDates');
-      }
-      
-      // 전체 _todoCountsByDate 상태 출력
-      print('🗂️ [_loadTodoCountsForMonth] 현재 _todoCountsByDate 전체: $_todoCountsByDate');
-      
-      // 캘린더 강제 새로고침을 위한 작은 트릭
-      if (mounted) {
-        setState(() {
-          // 상태를 한번 더 업데이트해서 캘린더가 확실히 다시 그려지도록 함
-        });
-      }
       
     } catch (e) {
-      print('❌ [_loadTodoCountsForMonth] 월별 할일 개수 로드 실패: $e');
+      print('❌ 월별 할일 개수 로드 실패: $e');
       setState(() {
         _todoCountsByDate = {};
       });
@@ -1028,13 +1003,13 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         if (imageUrl.startsWith('data:image/')) {
           // Base64 이미지 처리
           return Container(
-            width: 150,
-            height: 150,
+            width: 200,
+            height: 200,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(75),
+              borderRadius: BorderRadius.circular(100),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(75),
+              borderRadius: BorderRadius.circular(100),
               child: Image.memory(
                 base64Decode(imageUrl.split(',')[1]),
                 fit: BoxFit.cover,
@@ -1048,13 +1023,13 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
         } else {
           // 일반 네트워크 이미지
           return Container(
-            width: 150,
-            height: 150,
+            width: 200,
+            height: 200,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(75),
+              borderRadius: BorderRadius.circular(100),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(60),
+              borderRadius: BorderRadius.circular(100),
               child: Image.network(
                 imageUrl,
                 fit: BoxFit.cover,
@@ -1263,10 +1238,9 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
               eventLoader: (day) {
                 final dayString = DateFormat('yyyy-MM-dd').format(day);
                 
-                // 현재 선택된 날짜면 _todos 데이터 사용 (가장 정확함)
-                if (isSameDay(day, _selectedDay) && _todos.isNotEmpty) {
+                // 현재 선택된 날짜면 _todos 데이터 사용 (항상 우선)
+                if (isSameDay(day, _selectedDay)) {
                   final todosForDay = _todos.length;
-                  print('📅 [EventLoader] 선택된 날짜 $dayString: $todosForDay개 할일');
                   return List.generate(todosForDay, (index) => TodoItem(
                     id: 'selected_day_$index',
                     title: 'dummy',
@@ -1280,18 +1254,6 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                 
                 // 다른 날짜는 _todoCountsByDate에서 확인
                 int count = _todoCountsByDate[dayString] ?? 0;
-                
-                // 디버깅 정보 강화
-                if (count > 0) {
-                  print('📅 [EventLoader] $dayString: $count개 할일 (캐시됨)');
-                } else {
-                  // 디버깅: _todoCountsByDate 전체 상태도 출력
-                  if (dayString.contains('2024-06-10')) {
-                    print('🔍 [DEBUG] 6월 10일 확인: count=$count');
-                    print('🔍 [DEBUG] _todoCountsByDate 전체 키: ${_todoCountsByDate.keys.toList()}');
-                    print('🔍 [DEBUG] _todoCountsByDate 크기: ${_todoCountsByDate.length}');
-                  }
-                }
                 
                 return List.generate(count, (index) => TodoItem(
                   id: 'cached_${dayString}_$index',
@@ -1320,11 +1282,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
               calendarBuilders: CalendarBuilders(
                 markerBuilder: (context, day, events) {
                   if (events.isNotEmpty) {
-                    final dayString = DateFormat('yyyy-MM-dd').format(day);
                     final count = events.length;
-                    
-                    // 디버깅 로그
-                    print('🎯 [MarkerBuilder] $dayString: $count개 이벤트 표시');
                     
                     return Positioned(
                       bottom: 1,
@@ -2301,21 +2259,24 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       backgroundColor: Colors.white,
             appBar: AppBar(
         toolbarHeight: 60,  // 앱바 높이 줄임
-        title: Image.asset(
-          'assets/done_logo.png',
-          fit: BoxFit.contain,
-          height: 145,  // 로고 크기를 더 크게!
-          errorBuilder: (context, error, stackTrace) {
-            print('제목 이미지 로드 오류: $error');
-            return Text(
-              '할일 관리',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.bold,
-                fontSize: 22,
-              ),
-            );
-          },
+        title: Padding(
+          padding: const EdgeInsets.only(left: 20), // 오른쪽으로 이동
+          child: Image.asset(
+            'assets/icon/life guide logo.png',
+            fit: BoxFit.contain,
+            height: 215,  // 로고 크기를 더 크게!
+            errorBuilder: (context, error, stackTrace) {
+              print('제목 이미지 로드 오류: $error');
+              return Text(
+                '할일 관리',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                ),
+              );
+            },
+          ),
         ),
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent, // 스크롤 시 색상 변화 방지
@@ -3387,7 +3348,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     
     // 캐릭터가 선택되어 돌아온 경우 새로고침
     if (result == true) {
-      print('🔄 캐릭터 변경됨! 실시간 업데이트될 예정...');
+      // 캐릭터 변경됨 (로그 제거)
       // 실시간 스트림이 자동으로 업데이트하므로 별도 로딩 불필요
     }
   }
@@ -3413,46 +3374,117 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
       }
 
       // 종료 시간 결정
+      bool hasValidPauseData = todo.pauseTimes != null && 
+                               todo.pauseTimes!.isNotEmpty &&
+                               todo.pauseTimes!.any((time) => time.trim().isNotEmpty);
       bool hasValidResumeData = todo.resumeTimes != null && 
-                                todo.resumeTimes!.isNotEmpty && 
-                                todo.resumeTimes!.length > 0;
+                                todo.resumeTimes!.isNotEmpty &&
+                                todo.resumeTimes!.any((time) => time.trim().isNotEmpty);
       
-      if (todo.pauseTimes != null && todo.pauseTimes!.isNotEmpty && hasValidResumeData) {
+      if (hasValidPauseData && hasValidResumeData) {
+        // pause와 resume 둘 다 있는 경우
         int pauseCount = todo.pauseTimes!.length;
         int resumeCount = todo.resumeTimes!.length;
         
         if (pauseCount != resumeCount) {
+          // pause가 더 많으면 마지막 pause가 종료시간
           endTime = _parseTime(todo.pauseTimes!.last);
         } else {
+          // 개수가 같으면 stop_time 사용
           if (todo.stopTime != null) {
             endTime = _parseTime(todo.stopTime!);
           }
         }
+      } else if (hasValidPauseData && !hasValidResumeData) {
+        // pause만 있고 resume이 없는 경우 → 첫 번째 pause가 종료시간
+        endTime = _parseTime(todo.pauseTimes!.first);
       } else if (todo.stopTime != null) {
+        // pause도 없고 resume도 없으면 stop_time 사용
         endTime = _parseTime(todo.stopTime!);
       }
 
-      if (startTime == null || endTime == null) return '0분';
+      if (startTime == null || endTime == null) return '0초';
 
-      int totalMinutes = endTime.difference(startTime).inMinutes;
-      int pausedMinutes = _calculatePausedTime(todo);
+      int totalSeconds = endTime.difference(startTime).inSeconds;
+      int pausedSeconds = _calculatePausedTimeInSeconds(todo);
       
-      int workingMinutes = totalMinutes - pausedMinutes;
-      workingMinutes = workingMinutes < 0 ? 0 : workingMinutes;
+      int workingSeconds = totalSeconds - pausedSeconds;
+      workingSeconds = workingSeconds < 0 ? 0 : workingSeconds;
       
-      if (workingMinutes < 60) {
-        return '${workingMinutes}분';
+      // 초 단위로 시간 표시
+      if (workingSeconds < 60) {
+        return '${workingSeconds}초';
+      } else if (workingSeconds < 3600) {
+        int minutes = workingSeconds ~/ 60;
+        int seconds = workingSeconds % 60;
+        return '${minutes}분 ${seconds}초';
       } else {
-        int hours = workingMinutes ~/ 60;
-        int minutes = workingMinutes % 60;
-        return '${hours}시간 ${minutes}분';
+        int hours = workingSeconds ~/ 3600;
+        int minutes = (workingSeconds % 3600) ~/ 60;
+        int seconds = workingSeconds % 60;
+        return '${hours}시간 ${minutes}분 ${seconds}초';
       }
     } catch (e) {
-      return '0분';
+      return '0초';
     }
   }
 
-  // 일시정지 시간 계산
+  // 일시정지 시간 계산 (초 단위)
+  int _calculatePausedTimeInSeconds(TodoItem todo) {
+    bool hasValidPauseData = todo.pauseTimes != null && 
+                             todo.pauseTimes!.isNotEmpty &&
+                             todo.pauseTimes!.any((time) => time.trim().isNotEmpty);
+    bool hasValidResumeData = todo.resumeTimes != null && 
+                              todo.resumeTimes!.isNotEmpty &&
+                              todo.resumeTimes!.any((time) => time.trim().isNotEmpty);
+    
+    // if문1,2: pause_times, resume_times 둘다 없거나, pause_times만 있고 resume_times가 없으면 쉬는시간 없음
+    if (!hasValidPauseData || !hasValidResumeData) {
+      return 0;
+    }
+    
+    // if문3,4: 둘다 있을 때 처리
+    int pausedSeconds = 0;
+    int pauseCount = todo.pauseTimes!.length;
+    int resumeCount = todo.resumeTimes!.length;
+    
+    // if문4: 둘다 있고 리스트 len이 같으면 인덱스별로 매칭
+    if (pauseCount == resumeCount) {
+      for (int i = 0; i < pauseCount; i++) {
+        try {
+          DateTime pauseTime = _parseTime(todo.pauseTimes![i]);
+          DateTime resumeTime = _parseTime(todo.resumeTimes![i]);
+          int restSeconds = resumeTime.difference(pauseTime).inSeconds;
+          if (restSeconds > 0) {
+            pausedSeconds += restSeconds;
+          }
+        } catch (e) {
+          // 무시
+        }
+      }
+    }
+    // if문3: 둘다 있지만 값 리스트 len이 다르면
+    else {
+      // 작은 쪽 개수만큼 쉬는시간 계산
+      int pairCount = pauseCount < resumeCount ? pauseCount : resumeCount;
+      for (int i = 0; i < pairCount; i++) {
+        try {
+          DateTime pauseTime = _parseTime(todo.pauseTimes![i]);
+          DateTime resumeTime = _parseTime(todo.resumeTimes![i]);
+          int restSeconds = resumeTime.difference(pauseTime).inSeconds;
+          if (restSeconds > 0) {
+            pausedSeconds += restSeconds;
+          }
+        } catch (e) {
+          // 무시
+        }
+      }
+    }
+    
+    return pausedSeconds;
+  }
+
+  // 일시정지 시간 계산 (분 단위 - 기존 호환성)
   int _calculatePausedTime(TodoItem todo) {
     bool hasValidPauseData = todo.pauseTimes != null && 
                              todo.pauseTimes!.isNotEmpty &&
@@ -3617,31 +3649,30 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
     String? endTime;
     String endLabel = '완료';
     
-    // 위에서 정의한 hasValidPauseData, hasValidResumeData 변수 재사용
-    // if문1,2: pause_times, resume_times 둘다 없거나, pause_times만 있고 resume_times가 없으면
-    if (!hasValidPauseData || !hasValidResumeData) {
-      if (todo.stopTime != null) {
-        endTime = todo.stopTime!;
-        endLabel = '완료';
-      }
-    }
-    // if문3,4: 둘다 있을 때 처리
-    else {
+    if (hasValidPauseData && hasValidResumeData) {
+      // pause와 resume 둘 다 있는 경우
       int pauseCount = todo.pauseTimes!.length;
       int resumeCount = todo.resumeTimes!.length;
       
-      // if문3: 둘다 있지만 값 리스트 len이 다르면 pause_times의 마지막 인덱스가 종료시간
       if (pauseCount != resumeCount) {
+        // pause가 더 많으면 마지막 pause가 종료시간
         endTime = todo.pauseTimes!.last;
         endLabel = '완료';
-      }
-      // if문4: 둘다 있고 리스트 len이 같으면
-      else {
+      } else {
+        // 개수가 같으면 stop_time 사용
         if (todo.stopTime != null) {
           endTime = todo.stopTime!;
           endLabel = '완료';
         }
       }
+         } else if (hasValidPauseData && !hasValidResumeData) {
+       // pause만 있고 resume이 없는 경우 → 첫 번째 pause가 종료시간
+       endTime = todo.pauseTimes!.first;
+      endLabel = '완료';
+    } else if (todo.stopTime != null) {
+      // pause도 없고 resume도 없으면 stop_time 사용
+      endTime = todo.stopTime!;
+      endLabel = '완료';
     }
 
     if (endTime != null) {
