@@ -218,4 +218,106 @@ def update_todo():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-# ... (나머지 코드는 그대로 유지) 
+@app.route('/generate/prompt', methods=['POST'])
+def generate_from_prompt():
+    try:
+        data = request.get_json()
+        
+        # 데이터 검증 추가
+        if not data:
+            return jsonify({'error': '요청 데이터가 없습니다'}), 400
+            
+        prompt = data.get('prompt')
+        if not prompt:
+            return jsonify({'error': '프롬프트가 필요합니다'}), 400
+            
+        name = data.get('name', f'AI Character {datetime.now().strftime("%Y%m%d_%H%M%S")}')
+        style = data.get('style', '3D mascot')
+
+        print(f"🎨 캐릭터 생성 시작 - 프롬프트: {prompt}")
+        print(f"📝 이름: {name}, 스타일: {style}")
+
+        try:
+            # FreeAnimeGenerator 사용 (만약 없다면 대체 방법 사용)
+            generator = FreeAnimeGenerator()
+            image_url = generator.generate_with_pollinations(prompt)
+
+            if not image_url:
+                raise Exception("이미지 생성 실패")
+
+            # 이미지 다운로드 → static/images 에 저장
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"ai_character_{timestamp}.png"
+            filepath = generator.download_image(image_url, filename)
+
+            if not filepath:
+                raise Exception("이미지 다운로드 실패")
+
+            # Base64 인코딩
+            with open(filepath, "rb") as image_file:
+                img_base64 = base64.b64encode(image_file.read()).decode()
+            image_data_url = f"data:image/png;base64,{img_base64}"
+            
+        except Exception as gen_error:
+            print(f"❌ FreeAnimeGenerator 오류: {gen_error}")
+            # 대체 방법: 허깅페이스 API 사용
+            try:
+                print("🔄 허깅페이스 API로 대체 시도...")
+                
+                # 애니메이션 스타일 프롬프트 개선
+                enhanced_prompt = f"anime style, cute character, {prompt}, high quality, detailed"
+                
+                payload = {
+                    "inputs": enhanced_prompt,
+                    "parameters": {
+                        "num_inference_steps": 30,
+                        "guidance_scale": 7.5,
+                        "width": 512,
+                        "height": 512
+                    }
+                }
+                
+                image_bytes = query_huggingface(payload)
+                
+                # 이미지를 Base64로 인코딩
+                img_base64 = base64.b64encode(image_bytes).decode()
+                image_data_url = f"data:image/png;base64,{img_base64}"
+                
+                print("✅ 허깅페이스 API로 이미지 생성 성공")
+                
+            except Exception as hf_error:
+                print(f"❌ 허깅페이스 API도 실패: {hf_error}")
+                return jsonify({'error': f'이미지 생성 실패: {str(hf_error)}'}), 500
+
+        # Firestore 저장
+        character_ref = db.collection('characters').document()
+        character_id = character_ref.id
+
+        character_data = {
+            'character_id': character_id,
+            'user_id': 'anonymous_user',
+            'name': name,
+            'prompt': prompt,
+            'generation_type': 'prompt',
+            'image_url': image_data_url,
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'type': 'custom',
+            'style': style,
+            'is_selected': False  # 기본값으로 선택되지 않은 상태
+        }
+
+        character_ref.set(character_data)
+        print(f"✅ 캐릭터 저장 완료 - ID: {character_id}")
+
+        return jsonify({
+            'success': True,
+            'character_id': character_id,
+            'image_url': image_data_url,
+            'message': '캐릭터가 성공적으로 생성되고 저장되었습니다!'
+        })
+
+    except Exception as e:
+        print(f"❌ 캐릭터 생성 오류: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'캐릭터 생성 중 오류 발생: {str(e)}'}), 500 

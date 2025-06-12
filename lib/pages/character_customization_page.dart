@@ -18,7 +18,7 @@ class _CharacterCustomizationPageState extends State<CharacterCustomizationPage>
   String? _error;
           
   // 서버 URL (실제 환경에 맞게 수정 필요)
-  final String _serverUrl = 'http://127.0.0.1:5000/generate/prompt';
+  final String _serverUrl = 'http://192.168.0.12:5050/generate/prompt';
 
   Future<void> _generateCharacter() async {
     if (_promptController.text.isEmpty) {

@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/profile_service.dart';
 import 'profile_edit_page.dart';
 import '../data/character.dart';
@@ -248,15 +249,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
   // 프로필 아이콘 생성
   Widget _buildProfileIcon() {
     return GestureDetector(
-      onTap: () async {
-        final result = await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => const ProfileEditPage(),
-          ),
-        );
-        // 프로필 수정 후 돌아왔을 때는 실시간 스트림이 자동으로 업데이트함
-        // Firebase에서 실시간으로 감지하므로 별도 처리 불필요
-      },
+      onTap: _showUserInfoDialog,
       child: CircleAvatar(
         radius: 18,
         backgroundColor: Colors.grey.shade300,
@@ -274,6 +267,358 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
             )
           : null,
       ),
+    );
+  }
+
+  void _showUserInfoDialog() {
+    final user = FirebaseAuth.instance.currentUser;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.85,
+            constraints: const BoxConstraints(maxWidth: 400),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white,
+                  Colors.grey.shade50,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                // 배경 패턴
+                Positioned(
+                  top: -50,
+                  right: -50,
+                  child: Container(
+                    width: 150,
+                    height: 150,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.blue.withOpacity(0.1),
+                          Colors.purple.withOpacity(0.05),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                
+                // 메인 컨텐츠
+                Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 헤더
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Colors.blue.shade400, Colors.purple.shade400],
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.person_outline,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Text(
+                              '프로필 정보',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: () => Navigator.of(context).pop(),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  Icons.close,
+                                  size: 18,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 32),
+                        
+                        // 프로필 이미지
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [Colors.blue.shade100, Colors.purple.shade100],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.blue.withOpacity(0.2),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          padding: const EdgeInsets.all(4),
+                          child: CircleAvatar(
+                            radius: 56,
+                            backgroundColor: Colors.white,
+                            child: CircleAvatar(
+                              radius: 52,
+                              backgroundColor: Colors.grey.shade200,
+                              backgroundImage: user?.photoURL != null
+                                  ? NetworkImage(user!.photoURL!)
+                                  : _profileImageUrl.isNotEmpty
+                                  ? NetworkImage(_profileImageUrl)
+                                  : null,
+                              child: (user?.photoURL == null && _profileImageUrl.isEmpty)
+                                  ? Text(
+                                      _userName.isNotEmpty ? _userName[0].toUpperCase() : 'U',
+                                      style: TextStyle(
+                                        fontSize: 36,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        
+                        // 사용자 이름
+                        Text(
+                          _userName.isNotEmpty ? _userName : (user?.displayName ?? '사용자'),
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          user?.email ?? '이메일 정보 없음',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                        
+                        // 정보 카드들
+                        _buildModernInfoCard(
+                          '기본 정보',
+                          Icons.info_outline,
+                          Colors.blue,
+                          [
+                            _buildModernInfoRow(Icons.person, '이름', _userName.isNotEmpty ? _userName : (user?.displayName ?? '설정되지 않음')),
+                            _buildModernInfoRow(Icons.email, '이메일', user?.email ?? '설정되지 않음'),
+                            _buildModernInfoRow(Icons.fingerprint, 'ID', user?.uid.substring(0, 8) ?? '정보 없음'),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        _buildModernInfoCard(
+                          '계정 정보',
+                          Icons.account_circle_outlined,
+                          Colors.purple,
+                          [
+                            _buildModernInfoRow(Icons.star, '계정 유형', _isPremiumUser ? '프리미엄' : '기본'),
+                            _buildModernInfoRow(Icons.calendar_today, '가입일', user?.metadata.creationTime != null 
+                                ? '${user!.metadata.creationTime!.year}년 ${user.metadata.creationTime!.month}월 ${user.metadata.creationTime!.day}일'
+                                : '정보 없음'),
+                            _buildModernInfoRow(Icons.access_time, '최근 로그인', user?.metadata.lastSignInTime != null 
+                                ? '${user!.metadata.lastSignInTime!.year}년 ${user.metadata.lastSignInTime!.month}월 ${user.metadata.lastSignInTime!.day}일'
+                                : '정보 없음'),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 60,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              color: Colors.grey,
+            ),
+          ),
+        ),
+        const Text(': ', style: TextStyle(color: Colors.grey)),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModernInfoCard(String title, IconData icon, Color color, List<Widget> children) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 헤더
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  color.withOpacity(0.1),
+                  color.withOpacity(0.05),
+                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: color,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: color.withOpacity(0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // 컨텐츠
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: children.map((child) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: child,
+              )).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernInfoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(
+            icon,
+            size: 14,
+            color: Colors.grey.shade600,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

@@ -5,8 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AICharacterService {
-  static const String baseUrl = 'http://localhost:5050'; // 5050 포트로 변경
-  // 프로덕션에서는 실제 서버 URL로 변경 필요
+  static const String baseUrl = 'http://192.168.0.12:5050'; // 실제 PC IP 주소로 변경
+  // 폰에서 PC의 Flask 서버에 접근하기 위해 로컬 네트워크 IP 사용
   
   // 익명 사용자 ID (로그인 없이 사용)
   static const String anonymousUserId = 'anonymous_user';
