@@ -527,13 +527,13 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     );
   }
 
-  Widget _buildStatItem(String label, String value, IconData icon, {Color? valueColor}) {
+  Widget _buildStatItem(String label, String value, IconData icon, {Color? valueColor, Color? color}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(icon, color: Colors.grey.shade600, size: 16),
+            Icon(icon, color: color ?? Colors.grey.shade600, size: 16),
             const SizedBox(width: 4),
             Text(
               label,
@@ -1589,12 +1589,67 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     }
   }
 
+  // 증감률 계산 함수
+  String _calculateGrowthRate(int current, int previous) {
+    if (previous == 0) return '+100%';
+    double growthRate = ((current - previous) / previous) * 100;
+    String prefix = growthRate >= 0 ? '+' : '';
+    return '$prefix${growthRate.toStringAsFixed(1)}%';
+  }
+
+  // 증감률 아이콘 선택
+  IconData _getGrowthIcon(int current, int previous) {
+    if (previous == 0) return Icons.arrow_upward;
+    if (current > previous) return Icons.arrow_upward;
+    if (current < previous) return Icons.arrow_downward;
+    return Icons.remove;
+  }
+
+  // 증감률 색상 선택
+  Color _getGrowthColor(int current, int previous) {
+    if (previous == 0) return Colors.green;
+    if (current > previous) return Colors.green;
+    if (current < previous) return Colors.red;
+    return Colors.grey;
+  }
+
   // 주간 요약 카드
   Widget _buildWeeklySummaryCard() {
     int totalStudyTime = _weeklyData!.fold(0, (sum, stat) => sum + stat.studyTimeMinutes);
     int totalCompleted = _weeklyData!.fold(0, (sum, stat) => sum + stat.completedTasks);
     int totalTasks = _weeklyData!.fold(0, (sum, stat) => sum + stat.totalTasks);
-    double weeklyAvg = _weeklyData!.isNotEmpty ? totalStudyTime / 7 : 0; // 주간 평균 (7일 기준)
+    double weeklyAvg = _weeklyData!.isNotEmpty ? totalStudyTime / 7 : 0;
+
+    // 이번 주와 지난 주의 일평균 시간 계산
+    double currentWeekAvg = _weeklyData!.length >= 7 
+        ? _weeklyData!.sublist(_weeklyData!.length - 7).fold(0, (sum, stat) => sum + stat.studyTimeMinutes) / 7
+        : weeklyAvg;
+    double lastWeekAvg = _weeklyData!.length >= 14 
+        ? _weeklyData!.sublist(_weeklyData!.length - 14, _weeklyData!.length - 7).fold(0, (sum, stat) => sum + stat.studyTimeMinutes) / 7
+        : 0;
+
+    // 평균 시간 차이 계산 (시간 단위)
+    double difference = (currentWeekAvg - lastWeekAvg) / 60;
+    String differenceText;
+    Color differenceColor;
+    IconData differenceIcon;
+    
+    if (lastWeekAvg == 0 || difference == 0) {
+      differenceText = '-';
+      differenceColor = Colors.grey;
+      differenceIcon = Icons.remove;
+    } else {
+      String prefix = difference > 0 ? '+' : '';
+      differenceText = '$prefix${difference.toStringAsFixed(1)}시간';
+      
+      if (difference > 0) {
+        differenceColor = Colors.green;
+        differenceIcon = Icons.arrow_upward;
+      } else {
+        differenceColor = Colors.red;
+        differenceIcon = Icons.arrow_downward;
+      }
+    }
 
     return Container(
       width: double.infinity,
@@ -1609,22 +1664,22 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
+        children: [
+          const Text(
             '주간 요약',
-                style: TextStyle(
-				  color: Colors.black,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
                 child: _buildStatItem(
                   '총 활동시간',
-                  '$totalStudyTime분',
+                  '${(totalStudyTime / 60).toInt()}시간',
                   Icons.timer,
                 ),
               ),
@@ -1643,17 +1698,19 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             children: [
               Expanded(
                 child: _buildStatItem(
-                  '주간 평균',
-                  '${(weeklyAvg / 60).toStringAsFixed(1)}시간/일',
+                  '일 평균',
+                  '${(weeklyAvg / 60).toStringAsFixed(1)}시간',
                   Icons.trending_up,
                 ),
               ),
               const SizedBox(width: 20),
               Expanded(
                 child: _buildStatItem(
-                  '완료 할일',
-                  '$totalCompleted/$totalTasks',
-                  Icons.task_alt,
+                  '전주 대비',
+                  differenceText,
+                  differenceIcon,
+                  valueColor: differenceColor,
+                  color: differenceColor,
                 ),
               ),
             ],
@@ -1668,12 +1725,43 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     int totalStudyTime = _monthlyData!.fold(0, (sum, stat) => sum + stat.studyTimeMinutes);
     int totalCompleted = _monthlyData!.fold(0, (sum, stat) => sum + stat.completedTasks);
     int totalTasks = _monthlyData!.fold(0, (sum, stat) => sum + stat.totalTasks);
-    double monthlyAvg = _monthlyData!.isNotEmpty ? totalStudyTime / 4 : 0; // 월간 평균을 주 단위로 (4주 기준)
+    double monthlyAvg = _monthlyData!.isNotEmpty ? totalStudyTime / 30 : 0;
+
+    // 이번 달과 지난 달의 일평균 시간 계산
+    double currentMonthAvg = _monthlyData!.length >= 30 
+        ? _monthlyData!.sublist(_monthlyData!.length - 30).fold(0, (sum, stat) => sum + stat.studyTimeMinutes) / 30
+        : monthlyAvg;
+    double lastMonthAvg = _monthlyData!.length >= 60 
+        ? _monthlyData!.sublist(_monthlyData!.length - 60, _monthlyData!.length - 30).fold(0, (sum, stat) => sum + stat.studyTimeMinutes) / 30
+        : 0;
+
+    // 평균 시간 차이 계산 (시간 단위)
+    double difference = (currentMonthAvg - lastMonthAvg) / 60;
+    String differenceText;
+    Color differenceColor;
+    IconData differenceIcon;
+    
+    if (lastMonthAvg == 0 || difference == 0) {
+      differenceText = '-';
+      differenceColor = Colors.grey;
+      differenceIcon = Icons.remove;
+    } else {
+      String prefix = difference > 0 ? '+' : '';
+      differenceText = '$prefix${difference.toStringAsFixed(1)}시간';
+      
+      if (difference > 0) {
+        differenceColor = Colors.green;
+        differenceIcon = Icons.arrow_upward;
+      } else {
+        differenceColor = Colors.red;
+        differenceIcon = Icons.arrow_downward;
+      }
+    }
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
+      decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
@@ -1717,295 +1805,25 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             children: [
               Expanded(
                 child: _buildStatItem(
-                  '월간 평균',
-                  '${(monthlyAvg / 60).toStringAsFixed(1)}시간/주',
+                  '일 평균',
+                  '${(monthlyAvg / 60).toStringAsFixed(1)}시간',
                   Icons.trending_up,
                 ),
               ),
               const SizedBox(width: 20),
               Expanded(
                 child: _buildStatItem(
-                  '완료 할일',
-                  '$totalCompleted/$totalTasks',
-                  Icons.task_alt,
+                  '전월 대비',
+                  differenceText,
+                  differenceIcon,
+                  valueColor: differenceColor,
+                  color: differenceColor,
                 ),
               ),
             ],
           ),
         ],
       ),
-    );
-  }
-
-
-
-  // 연간 요약 카드
-  Widget _buildYearlySummaryCard() {
-    int totalStudyTime = _yearlyData!.fold(0, (sum, stat) => sum + stat.totalStudyTimeMinutes);
-    int totalCompleted = _yearlyData!.fold(0, (sum, stat) => sum + stat.totalCompletedTasks);
-    int totalTasks = _yearlyData!.fold(0, (sum, stat) => sum + stat.totalTasks);
-    double yearlyAvg = _yearlyData!.isNotEmpty ? totalStudyTime / 12 : 0;
-
-    return Container(
-      key: ValueKey('yearly_summary_${_selectedYear.year}'),
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                '연간 요약',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                '${_selectedYear.year}년',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.timer, color: Colors.grey.shade600, size: 16),
-                        const SizedBox(width: 4),
-                        Text(
-                          '총 활동시간',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${(totalStudyTime / 60).toInt()}시간',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.check_circle, color: Colors.grey.shade600, size: 16),
-                        const SizedBox(width: 4),
-                        Text(
-                          '완료율',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${totalTasks > 0 ? (totalCompleted / totalTasks * 100).toInt() : 0}%',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.trending_up, color: Colors.grey.shade600, size: 16),
-                        const SizedBox(width: 4),
-                        Text(
-                          '연간 평균',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${(yearlyAvg / 60).toInt()}시간/월',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.task_alt, color: Colors.grey.shade600, size: 16),
-                        const SizedBox(width: 4),
-                        Text(
-                          '완료 할일',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$totalCompleted/$totalTasks',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 카테고리별 스택 빌더
-  List<Widget> _buildCategoryStack(Map<String, int> categoryTime, double totalHeight) {
-    if (categoryTime.isEmpty || totalHeight <= 0) return [Container()];
-    
-    int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
-    List<Widget> stackItems = [];
-    
-    categoryTime.entries.forEach((entry) {
-      double proportion = entry.value / totalTime;
-      double height = totalHeight * proportion;
-      
-      if (height > 0.5) { // 최소 높이 0.5픽셀 이상만 표시
-        stackItems.add(
-          Container(
-            height: height,
-            decoration: BoxDecoration(
-              color: _getCategoryColor(entry.key),
-              borderRadius: stackItems.isEmpty 
-                  ? BorderRadius.zero
-                  : BorderRadius.zero,
-            ),
-          ),
-        );
-      }
-    });
-    
-    // 빈 스택인 경우 기본 컨테이너 반환
-    if (stackItems.isEmpty) {
-      return [
-        Container(
-          height: totalHeight,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade200,
-            borderRadius: BorderRadius.zero,
-          ),
-        )
-      ];
-    }
-    
-    return stackItems;
-  }
-
-  // 새로운 카테고리 스택 위젯 (Stack 기반)
-  Widget _buildCategoryBar(Map<String, int> categoryTime, double totalHeight) {
-    if (categoryTime.isEmpty || totalHeight <= 0) {
-      return Container(
-        height: totalHeight,
-        decoration: BoxDecoration(
-          color: Colors.grey.shade200,
-          borderRadius: BorderRadius.zero,
-        ),
-      );
-    }
-    
-    int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
-    List<Widget> segments = [];
-    double currentBottom = 0;
-    
-    // 카테고리를 정렬하여 일관성 있게 표시
-    List<MapEntry<String, int>> sortedCategories = categoryTime.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    
-    for (var entry in sortedCategories) {
-      double segmentHeight = (entry.value / totalTime) * totalHeight;
-      
-      if (segmentHeight > 0.5) {
-        segments.add(
-          Positioned(
-            bottom: currentBottom,
-            left: 0,
-            right: 0,
-            height: segmentHeight,
-            child: Container(
-              decoration: BoxDecoration(
-                color: _getCategoryColor(entry.key),
-                borderRadius: currentBottom == 0 
-                    ? BorderRadius.vertical(bottom: Radius.circular(4))
-                    : currentBottom + segmentHeight >= totalHeight - 0.5
-                        ? BorderRadius.vertical(top: Radius.circular(4))
-                        : BorderRadius.zero,
-              ),
-            ),
-          ),
-        );
-        currentBottom += segmentHeight;
-      }
-    }
-    
-    return SizedBox(
-      height: totalHeight,
-      child: Stack(children: segments),
     );
   }
 
@@ -3461,36 +3279,131 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       },
     );
   }
-}
 
-// 빗금 패턴 그리기 위한 커스텀 페인터
-class DiagonalStripePainter extends CustomPainter {
-  final Color color;
-  
-  DiagonalStripePainter(this.color);
-  
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withOpacity(0.5)
-      ..strokeWidth = 0.5;
+  // 연간 요약 카드
+  Widget _buildYearlySummaryCard() {
+    int totalStudyTime = _yearlyData!.fold(0, (sum, stat) => sum + stat.totalStudyTimeMinutes);
+    int totalCompleted = _yearlyData!.fold(0, (sum, stat) => sum + stat.totalCompletedTasks);
+    int totalTasks = _yearlyData!.fold(0, (sum, stat) => sum + stat.totalTasks);
+    double monthlyAvg = _yearlyData!.isNotEmpty ? totalStudyTime / 12 : 0;
+
+    return Container(
+      key: ValueKey('yearly_summary_${_selectedYear.year}'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '연간 요약',
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatItem(
+                  '총 활동시간',
+                  '${(totalStudyTime / 60).toInt()}시간',
+                  Icons.timer,
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: _buildStatItem(
+                  '완료율',
+                  '${totalTasks > 0 ? (totalCompleted / totalTasks * 100).toInt() : 0}%',
+                  Icons.check_circle,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatItem(
+                  '월 평균',
+                  '${(monthlyAvg / 60).toStringAsFixed(1)}시간',
+                  Icons.trending_up,
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: _buildStatItem(
+                  '완료 할일',
+                  '$totalCompleted/$totalTasks',
+                  Icons.task_alt,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 카테고리별 스택 빌더
+  Widget _buildCategoryBar(Map<String, int> categoryTime, double totalHeight) {
+    if (categoryTime.isEmpty || totalHeight <= 0) {
+      return Container(
+        height: totalHeight,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.zero,
+        ),
+      );
+    }
     
-    // 작은 블록에 맞는 더 촘촘한 대각선 빗금
-    for (double i = -size.height; i < size.width + size.height; i += 2.0) {
-      final start = Offset(i, 0);
-      final end = Offset(i + size.height, size.height);
+    int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
+    List<Widget> segments = [];
+    double currentBottom = 0;
+    
+    // 카테고리를 정렬하여 일관성 있게 표시
+    List<MapEntry<String, int>> sortedCategories = categoryTime.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    
+    for (var entry in sortedCategories) {
+      double segmentHeight = (entry.value / totalTime) * totalHeight;
       
-      // 블록 경계 내에서만 그리기
-      if (start.dx < size.width || end.dx > 0) {
-        canvas.drawLine(
-          Offset(math.max(0, start.dx), start.dy),
-          Offset(math.min(size.width, end.dx), end.dy),
-          paint,
+      if (segmentHeight > 0.5) {
+        segments.add(
+          Positioned(
+            bottom: currentBottom,
+            left: 0,
+            right: 0,
+            height: segmentHeight,
+            child: Container(
+              decoration: BoxDecoration(
+                color: _getCategoryColor(entry.key),
+                borderRadius: currentBottom == 0 
+                    ? BorderRadius.vertical(bottom: Radius.circular(4))
+                    : currentBottom + segmentHeight >= totalHeight - 0.5
+                        ? BorderRadius.vertical(top: Radius.circular(4))
+                        : BorderRadius.zero,
+              ),
+            ),
+          ),
         );
+        currentBottom += segmentHeight;
       }
     }
+    
+    return SizedBox(
+      height: totalHeight,
+      child: Stack(children: segments),
+    );
   }
-  
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-} 
+}
