@@ -6,37 +6,70 @@ import 'package:intl/intl.dart';
 // 도넛 차트 페인터
 class DonutChartPainter extends CustomPainter {
   final Map<String, int> categoryTime;
-  final int totalTime;
+  final int total;
   final double animationValue;
-  final Color Function(String) getCategoryColor;
+  
+  DonutChartPainter(this.categoryTime, this.total, this.animationValue);
 
-  DonutChartPainter({
-    required this.categoryTime,
-    required this.totalTime,
-    required this.animationValue,
-    required this.getCategoryColor,
-  });
+  Color _getCategoryColor(String category) {
+    // 주요 카테고리들의 고정 색상
+    Map<String, Color> fixedColors = {
+      '프로젝트': Colors.blue.shade400,
+      '공부': Colors.purple.shade400,
+      '운동': Colors.green.shade400,
+      '독서': Colors.pink.shade400,
+      '취미': Colors.teal.shade400,
+      '업무': Colors.indigo.shade400,
+      '요리': Colors.lime.shade600,
+      '영화': Colors.deepPurple.shade400,
+      '음악': Colors.cyan.shade400,
+      '게임': Colors.amber.shade600,
+      '쇼핑': Colors.lightBlue.shade400,
+      '여행': Colors.lightGreen.shade600,
+      '친구': Colors.brown.shade400,
+      '가족': Colors.red.shade400,
+      '기타': Colors.grey.shade400,
+    };
+
+    return fixedColors[category] ?? Colors.blueGrey.shade600;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
+    print('📊 DonutChartPainter.paint 호출됨');
+    print('📊 데이터: $categoryTime');
+    print('📊 전체: $total');
+    print('📊 애니메이션: $animationValue');
+
+    if (categoryTime.isEmpty || total == 0) {
+      print('📊 데이터가 비어있거나 전체가 0입니다.');
+      return;
+    }
+
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 40.0;
+    final radius = math.min(size.width, size.height) / 2;
     
     // 배경 원 그리기
-    paint.color = Colors.grey.shade100;
-    canvas.drawCircle(center, radius - paint.strokeWidth / 2, paint);
+    final bgPaint = Paint()
+      ..color = Colors.grey.shade200
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 15.0;
     
+    canvas.drawCircle(center, radius - 10, bgPaint);
+    
+    // 데이터 원 그리기
     double startAngle = -math.pi / 2;
-    
     categoryTime.forEach((category, time) {
-      final sweepAngle = 2 * math.pi * (time / totalTime) * animationValue;
-      paint.color = getCategoryColor(category);
+      final sweepAngle = 2 * math.pi * (time / total) * animationValue;
+      
+      final paint = Paint()
+        ..color = _getCategoryColor(category)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 15.0
+        ..strokeCap = StrokeCap.round;
       
       canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius - paint.strokeWidth / 2),
+        Rect.fromCircle(center: center, radius: radius - 10),
         startAngle,
         sweepAngle,
         false,
@@ -48,7 +81,11 @@ class DonutChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(DonutChartPainter oldDelegate) {
+    return oldDelegate.animationValue != animationValue ||
+           oldDelegate.total != total ||
+           oldDelegate.categoryTime != categoryTime;
+  }
 }
 
 class StatisticsPage extends StatefulWidget {
@@ -352,7 +389,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     Map<String, int> categoryTime = analysis['categoryMinutes'];
     int totalStudyTime = categoryTime.values.fold(0, (sum, time) => sum + time);
     double completionRate = analysis['completionRate'];
-
+    
     return FutureBuilder<int>(
       future: _getYesterdayStudyTime(),
       builder: (context, snapshot) {
@@ -361,41 +398,41 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         String differenceText = timeDifference >= 0 ? '+${_formatTime(timeDifference)}' : '-${_formatTime(timeDifference.abs())}';
         Color differenceColor = timeDifference >= 0 ? Colors.green.shade600 : Colors.red.shade600;
 
-        String focusLevel;
-        if (completionRate < 33) {
-          focusLevel = "낮음";
-        } else if (completionRate < 66) {
-          focusLevel = "보통";
-        } else {
-          focusLevel = "높음";
-        }
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.grey.shade200,
-              width: 1,
+    String focusLevel;
+    if (completionRate < 33) {
+      focusLevel = "낮음";
+    } else if (completionRate < 66) {
+      focusLevel = "보통";
+    } else {
+      focusLevel = "높음";
+    }
+    
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '일간 요약',
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 20),
+          Row(
             children: [
-              const Text(
-                '일간 요약',
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
+              Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -404,7 +441,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                             Icon(Icons.timer, color: Colors.grey.shade600, size: 16),
                             const SizedBox(width: 4),
                             Text(
-                              '총 활동시간',
+                  '총 활동시간',
                               style: TextStyle(
                                 color: Colors.grey.shade600,
                                 fontSize: 14,
@@ -414,7 +451,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          _formatTime(totalStudyTime),
+                  _formatTime(totalStudyTime),
                           style: const TextStyle(
                             color: Colors.black,
                             fontSize: 24,
@@ -422,10 +459,10 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(width: 20),
-                  Expanded(
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -452,14 +489,14 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                ],
+                ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -468,7 +505,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                             Icon(Icons.check_circle, color: Colors.grey.shade600, size: 16),
                             const SizedBox(width: 4),
                             Text(
-                              '완료율',
+                  '완료율',
                               style: TextStyle(
                                 color: Colors.grey.shade600,
                                 fontSize: 14,
@@ -478,7 +515,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${completionRate.toInt()}%',
+                  '${completionRate.toInt()}%',
                           style: const TextStyle(
                             color: Colors.black,
                             fontSize: 24,
@@ -486,10 +523,10 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(width: 20),
-                  Expanded(
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -498,7 +535,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                             Icon(Icons.psychology, color: Colors.grey.shade600, size: 16),
                             const SizedBox(width: 4),
                             Text(
-                              '집중도',
+                  '집중도',
                               style: TextStyle(
                                 color: Colors.grey.shade600,
                                 fontSize: 14,
@@ -508,7 +545,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          focusLevel,
+                  focusLevel,
                           style: const TextStyle(
                             color: Colors.black,
                             fontSize: 24,
@@ -516,12 +553,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
+        ],
+      ),
         );
       },
     );
@@ -756,25 +793,25 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // 총 활동 시간 표시
-                    if (hourlyActivity.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '총 ${_formatTime(hourlyActivity.values.fold(0, (a, b) => a + b))}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.blue.shade700,
-                          ),
-                        ),
+                // 총 활동 시간 표시
+                if (hourlyActivity.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '총 ${_formatTime(hourlyActivity.values.fold(0, (a, b) => a + b))}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
                       ),
                   ],
-                ),
+                  ),
               ],
             ),
             const SizedBox(height: 20),
@@ -851,8 +888,8 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                                       Text(
                                         '${activityMinutes}',
                                         style: TextStyle(
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.w600,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w600,
                                           color: barHeight > 20 ? Colors.white : Colors.grey.shade600,
                                         ),
                                       ),
@@ -1140,10 +1177,9 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                       child: CustomPaint(
                         size: const Size(120, 120),
                         painter: DonutChartPainter(
-                          categoryTime: categoryTime,
-                          totalTime: totalTime,
-                          animationValue: _progressAnimation.value,
-                          getCategoryColor: _getCategoryColor,
+                          categoryTime,
+                          totalTime,
+                          _progressAnimation.value
                         ),
                       ),
                     );
@@ -1473,7 +1509,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                           Text(
                             '오늘',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 9,
                               fontWeight: FontWeight.w500,
                               color: Colors.black,
                             ),
@@ -1628,8 +1664,8 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
         ? _weeklyData!.sublist(_weeklyData!.length - 14, _weeklyData!.length - 7).fold(0, (sum, stat) => sum + stat.studyTimeMinutes) / 7
         : 0;
 
-    // 평균 시간 차이 계산 (시간 단위)
-    double difference = (currentWeekAvg - lastWeekAvg) / 60;
+    // 평균 시간 차이 계산 (분 단위)
+    double difference = currentWeekAvg - lastWeekAvg;
     String differenceText;
     Color differenceColor;
     IconData differenceIcon;
@@ -1640,7 +1676,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       differenceIcon = Icons.remove;
     } else {
       String prefix = difference > 0 ? '+' : '';
-      differenceText = '$prefix${difference.toStringAsFixed(1)}시간';
+      differenceText = '$prefix${difference.toStringAsFixed(0)}분';
       
       if (difference > 0) {
         differenceColor = Colors.green;
@@ -1664,22 +1700,22 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
+            children: [
+              const Text(
             '주간 요약',
-            style: TextStyle(
-              color: Colors.black,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+                style: TextStyle(
+				  color: Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
           const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
                 child: _buildStatItem(
                   '총 활동시간',
-                  '${(totalStudyTime / 60).toInt()}시간',
+                  '${totalStudyTime}분',
                   Icons.timer,
                 ),
               ),
@@ -1698,8 +1734,8 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             children: [
               Expanded(
                 child: _buildStatItem(
-                  '일 평균',
-                  '${(weeklyAvg / 60).toStringAsFixed(1)}시간',
+                  '주간 평균',
+                  '${weeklyAvg.toStringAsFixed(0)}분/일',
                   Icons.trending_up,
                 ),
               ),
@@ -1771,14 +1807,14 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
+            children: [
+              const Text(
             '월간 요약',
-            style: TextStyle(
-              color: Colors.black,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
           ),
           const SizedBox(height: 20),
           Row(
@@ -1805,8 +1841,8 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
             children: [
               Expanded(
                 child: _buildStatItem(
-                  '일 평균',
-                  '${(monthlyAvg / 60).toStringAsFixed(1)}시간',
+                  '월간 평균',
+                  '${((monthlyAvg * 7) / 60).toStringAsFixed(1)}시간/주',
                   Icons.trending_up,
                 ),
               ),
@@ -1903,30 +1939,30 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           SizedBox(
             height: 200,
             child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(7, (index) {
-                    if (index >= _weeklyData!.length) return const SizedBox();
-                    
-                    DailyStats dayData = _weeklyData![index];
-                    Map<String, int> categoryTime = _processCategories(dayData.categoryTime);
-                    int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
-                    
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(7, (index) {
+                if (index >= _weeklyData!.length) return const SizedBox();
+                
+                DailyStats dayData = _weeklyData![index];
+                Map<String, int> categoryTime = _processCategories(dayData.categoryTime);
+                int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
+                
                     double maxHeight = 140; // 최대 높이 감소
-                    // 최대값 기준으로 높이 계산
-                    double barHeight = maxTotalTime > 0 ? (totalTime / maxTotalTime) * maxHeight : 0;
-                    
-                    // 실제 날짜에 맞는 요일 계산
-                    String dayOfWeek = _getDayOfWeekKorean(dayData.date.weekday);
-                    
+                // 최대값 기준으로 높이 계산
+                double barHeight = maxTotalTime > 0 ? (totalTime / maxTotalTime) * maxHeight : 0;
+                
+                // 실제 날짜에 맞는 요일 계산
+                String dayOfWeek = _getDayOfWeekKorean(dayData.date.weekday);
+                
                     return Expanded(
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.end,
                         mainAxisSize: MainAxisSize.min, // 추가
-                        children: [
-                          AnimatedBuilder(
-                            animation: _progressAnimation,
-                            builder: (context, child) {
+                  children: [
+                    AnimatedBuilder(
+                      animation: _progressAnimation,
+                      builder: (context, child) {
                               return GestureDetector(
                                 onTap: () {
                                   if (totalTime > 0) {
@@ -1940,32 +1976,32 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                                 },
                                 child: SizedBox(
                                   width: 20,
-                                  child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
+                          child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
                                 ),
-                              );
-                            },
-                          ),
+                        );
+                      },
+                    ),
                           const SizedBox(height: 4), // 간격 감소
-                          Text(
-                            dayOfWeek,
-                            style: TextStyle(
+                    Text(
+                      dayOfWeek,
+                      style: TextStyle(
                               fontSize: 11, // 폰트 크기 감소
-                              color: Colors.grey.shade600,
+                        color: Colors.grey.shade600,
                               fontWeight: FontWeight.bold, // 모든 요일 볼드체
-                            ),
-                          ),
-                          Text(
-                            '${totalTime}m',
-                            style: TextStyle(
-                              fontSize: 9, // 폰트 크기 감소
-                              color: Colors.grey.shade500,
-                            ),
-                          ),
-                        ],
                       ),
-                    );
-                  }),
-                ),
+                    ),
+                    Text(
+                            '${totalTime}m',
+                      style: TextStyle(
+                              fontSize: 9, // 폰트 크기 감소
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                      ),
+                );
+              }),
+            ),
           ),
         ],
       ),
@@ -2083,32 +2119,32 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                 width: 800,  // 고정된 너비
                 height: 180,  // 높이 조정
                 padding: EdgeInsets.symmetric(vertical: 10),  // 상하 패딩 추가
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(daysInMonth, (index) {
-                    int dayNumber = index + 1;
-                    DailyStats? dayData = dailyDataMap[dayNumber];
-                    
-                    Map<String, int> categoryTime = dayData != null ? _processCategories(dayData.categoryTime) : {};
-                    int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
-                    
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: List.generate(daysInMonth, (index) {
+                  int dayNumber = index + 1;
+                  DailyStats? dayData = dailyDataMap[dayNumber];
+                  
+                  Map<String, int> categoryTime = dayData != null ? _processCategories(dayData.categoryTime) : {};
+                  int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
+                  
                     // 1일, 10일, 20일, 말일 또는 활동이 있는 날짜 표시
                     bool shouldShowDate = true;  // 모든 날짜 표시
                     
                     double maxHeight = 120;  // 높이 조정
-                    // 최대값 기준으로 높이 계산
-                    double barHeight = maxTotalTime > 0 ? (totalTime / maxTotalTime) * maxHeight : 0;
-                    
+                  // 최대값 기준으로 높이 계산
+                  double barHeight = maxTotalTime > 0 ? (totalTime / maxTotalTime) * maxHeight : 0;
+                  
                     return Container(
                       width: 24,  // 고정된 막대 너비
                       margin: EdgeInsets.symmetric(horizontal: 1),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          AnimatedBuilder(
-                            animation: _progressAnimation,
-                            builder: (context, child) {
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        AnimatedBuilder(
+                          animation: _progressAnimation,
+                          builder: (context, child) {
                               return GestureDetector(
                                 onTap: () {
                                   if (totalTime > 0) {
@@ -2124,12 +2160,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                                 },
                                 child: Container(
                                   width: 20,
-                                  child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
+                              child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
                                 ),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 4),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 4),
                           // 날짜 표시 영역 - 고정 높이
                           Container(
                             height: 16,  // 날짜 영역 고정 높이
@@ -2150,17 +2186,17 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                             child: totalTime > 0
                               ? Text(
                                   '${(totalTime / 60).toStringAsFixed(1)}h',
-                                  style: TextStyle(
-                                    fontSize: 9,
+                          style: TextStyle(
+                            fontSize: 9,
                                     color: Colors.grey.shade500,
-                                  ),
+                          ),
                                 )
                               : const SizedBox(),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
                 ),
               ),
             ),
@@ -2262,8 +2298,8 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                                   }
                                 },
                                 child: Container(
-                                  width: 16,
-                                  child: _buildCategoryBar(categoryTime, barHeight),
+                                width: 16,
+                                child: _buildCategoryBar(categoryTime, barHeight),
                                 ),
                               );
                             },
@@ -3080,10 +3116,9 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                       child: CustomPaint(
                         size: const Size(120, 120),
                         painter: DonutChartPainter(
-                          categoryTime: categoryTime,
-                          totalTime: totalTime,
-                          animationValue: _progressAnimation.value,
-                          getCategoryColor: _getCategoryColor,
+                          categoryTime,
+                          totalTime,
+                          _progressAnimation.value
                         ),
                       ),
                     );
@@ -3198,10 +3233,9 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                       CustomPaint(
                         size: const Size(240, 240),
                         painter: DonutChartPainter(
-                          categoryTime: categoryTime,
-                          totalTime: totalTime,
-                          animationValue: 1.0,
-                          getCategoryColor: _getCategoryColor,
+                          categoryTime,
+                          totalTime,
+                          1.0
                         ),
                       ),
                       Container(
@@ -3406,4 +3440,4 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       child: Stack(children: segments),
     );
   }
-}
+} 
