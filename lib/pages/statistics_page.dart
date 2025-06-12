@@ -3,6 +3,54 @@ import 'dart:math' as math;
 import '../services/statistics_service.dart';
 import 'package:intl/intl.dart';
 
+// 도넛 차트 페인터
+class DonutChartPainter extends CustomPainter {
+  final Map<String, int> categoryTime;
+  final int totalTime;
+  final double animationValue;
+  final Color Function(String) getCategoryColor;
+
+  DonutChartPainter({
+    required this.categoryTime,
+    required this.totalTime,
+    required this.animationValue,
+    required this.getCategoryColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 40.0;
+    
+    // 배경 원 그리기
+    paint.color = Colors.grey.shade100;
+    canvas.drawCircle(center, radius - paint.strokeWidth / 2, paint);
+    
+    double startAngle = -math.pi / 2;
+    
+    categoryTime.forEach((category, time) {
+      final sweepAngle = 2 * math.pi * (time / totalTime) * animationValue;
+      paint.color = getCategoryColor(category);
+      
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius - paint.strokeWidth / 2),
+        startAngle,
+        sweepAngle,
+        false,
+        paint,
+      );
+      
+      startAngle += sweepAngle;
+    });
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({super.key});
 
@@ -1086,11 +1134,17 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                   animation: _progressAnimation,
                   builder: (context, child) {
                     print('📊 애니메이션 값: ${_progressAnimation.value}');
-                    return CustomPaint(
-                      painter: DonutChartPainter(
-                        categoryTime,
-                        totalTime,
-                        _progressAnimation.value,
+                    return SizedBox(
+                      width: 120,
+                      height: 120,
+                      child: CustomPaint(
+                        size: const Size(120, 120),
+                        painter: DonutChartPainter(
+                          categoryTime: categoryTime,
+                          totalTime: totalTime,
+                          animationValue: _progressAnimation.value,
+                          getCategoryColor: _getCategoryColor,
+                        ),
                       ),
                     );
                   },
@@ -2055,9 +2109,21 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                           AnimatedBuilder(
                             animation: _progressAnimation,
                             builder: (context, child) {
-                              return SizedBox(
-                                width: 20, // 너비 감소
-                                child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
+                              return GestureDetector(
+                                onTap: () {
+                                  if (totalTime > 0) {
+                                    String formattedDate = DateFormat('yyyy년 MM월 dd일').format(dayData.date);
+                                    _showCategoryTimeDialog(
+                                      context,
+                                      categoryTime,
+                                      '$formattedDate ($dayOfWeek)',
+                                    );
+                                  }
+                                },
+                                child: SizedBox(
+                                  width: 20,
+                                  child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
+                                ),
                               );
                             },
                           ),
@@ -2210,9 +2276,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                     int totalTime = categoryTime.values.fold(0, (a, b) => a + b);
                     
                     // 1일, 10일, 20일, 말일 또는 활동이 있는 날짜 표시
-                    bool shouldShowDate = dayNumber == 1 || dayNumber == 10 || 
-                                       dayNumber == 20 || dayNumber == daysInMonth || 
-                                       totalTime > 0;
+                    bool shouldShowDate = true;  // 모든 날짜 표시
                     
                     double maxHeight = 120;  // 높이 조정
                     // 최대값 기준으로 높이 계산
@@ -2227,9 +2291,23 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                           AnimatedBuilder(
                             animation: _progressAnimation,
                             builder: (context, child) {
-                              return Container(
-                                width: 20,
-                                child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
+                              return GestureDetector(
+                                onTap: () {
+                                  if (totalTime > 0) {
+                                    String formattedDate = DateFormat('yyyy년 MM월 dd일').format(
+                                      DateTime(_selectedMonth.year, _selectedMonth.month, dayNumber)
+                                    );
+                                    _showCategoryTimeDialog(
+                                      context,
+                                      categoryTime,
+                                      formattedDate,
+                                    );
+                                  }
+                                },
+                                child: Container(
+                                  width: 20,
+                                  child: _buildCategoryBar(categoryTime, barHeight * _progressAnimation.value),
+                                ),
                               );
                             },
                           ),
@@ -2354,9 +2432,21 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                           AnimatedBuilder(
                             animation: _progressAnimation,
                             builder: (context, child) {
-                              return Container(
-                                width: 16,
-                                child: _buildCategoryBar(categoryTime, barHeight),
+                              return GestureDetector(
+                                onTap: () {
+                                  if (totalTime > 0) {
+                                    String formattedDate = '${_selectedYear.year}년 ${index + 1}월';
+                                    _showCategoryTimeDialog(
+                                      context,
+                                      categoryTime,
+                                      formattedDate,
+                                    );
+                                  }
+                                },
+                                child: Container(
+                                  width: 16,
+                                  child: _buildCategoryBar(categoryTime, barHeight),
+                                ),
                               );
                             },
                           ),
@@ -3166,11 +3256,17 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
                 child: AnimatedBuilder(
                   animation: _progressAnimation,
                   builder: (context, child) {
-                    return CustomPaint(
-                      painter: DonutChartPainter(
-                        categoryTime,
-                        totalTime,
-                        _progressAnimation.value,
+                    return SizedBox(
+                      width: 120,
+                      height: 120,
+                      child: CustomPaint(
+                        size: const Size(120, 120),
+                        painter: DonutChartPainter(
+                          categoryTime: categoryTime,
+                          totalTime: totalTime,
+                          animationValue: _progressAnimation.value,
+                          getCategoryColor: _getCategoryColor,
+                        ),
                       ),
                     );
                   },
@@ -3237,123 +3333,133 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       ),
     );
   }
-}
 
-class DonutChartPainter extends CustomPainter {
-  final Map<String, int> categoryTime;
-  final int total;
-  final double animationValue;
-  
-  DonutChartPainter(this.categoryTime, this.total, this.animationValue);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    print('📊 DonutChartPainter.paint 호출됨');
-    print('📊 데이터: $categoryTime');
-    print('📊 전체: $total');
-    print('📊 애니메이션: $animationValue');
-
-    if (categoryTime.isEmpty || total == 0) {
-      print('📊 데이터가 비어있거나 전체가 0입니다.');
-      return;
-    }
-
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = math.min(size.width, size.height) / 2;
+  // 카테고리별 시간 다이얼로그
+  void _showCategoryTimeDialog(BuildContext context, Map<String, int> categoryTime, String title) {
+    // 카테고리별 시간을 내림차순으로 정렬
+    List<MapEntry<String, int>> sortedCategories = categoryTime.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     
-    // 배경 원 그리기
-    final bgPaint = Paint()
-      ..color = Colors.grey.shade200
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 15.0;
-    
-    canvas.drawCircle(center, radius - 10, bgPaint);
-    
-    // 데이터 원 그리기
-    double startAngle = -math.pi / 2;
-    categoryTime.forEach((category, time) {
-      final sweepAngle = 2 * math.pi * (time / total) * animationValue;
-      
-      final paint = Paint()
-        ..color = _getCategoryColor(category)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 15.0
-        ..strokeCap = StrokeCap.round;
-      
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius - 10),
-        startAngle,
-        sweepAngle,
-        false,
-        paint,
-      );
-      
-      startAngle += sweepAngle;
-    });
-  }
+    int totalTime = categoryTime.values.fold(0, (sum, time) => sum + time);
 
-  @override
-  bool shouldRepaint(DonutChartPainter oldDelegate) {
-    return oldDelegate.animationValue != animationValue ||
-           oldDelegate.total != total ||
-           oldDelegate.categoryTime != categoryTime;
-  }
-
-  Color _getCategoryColor(String category) {
-    switch (category) {
-      case '프로젝트':
-        return Colors.blue.shade400;
-      case '공부':
-        return Colors.purple.shade400;
-      case '운동':
-        return Colors.green.shade400;
-      case '독서':
-        return Colors.pink.shade400;
-      case '취미':
-        return Colors.teal.shade400;
-      case '업무':
-        return Colors.indigo.shade400;
-      case '요리':
-        return Colors.lime.shade400;
-      case '영화':
-        return Colors.deepPurple.shade400;
-      case '음악':
-        return Colors.cyan.shade400;
-      case '게임':
-        return Colors.amber.shade400;
-      case '쇼핑':
-        return Colors.lightBlue.shade400;
-      case '여행':
-        return Colors.lightGreen.shade400;
-      case '친구':
-        return Colors.brown.shade400;
-      case '가족':
-        return Colors.red.shade400;
-      case '기타':
-        return Colors.grey.shade400;
-      default:
-        int hash = category.hashCode;
-        List<Color> colors = [
-          Colors.red.shade400,
-          Colors.pink.shade400,
-          Colors.purple.shade400,
-          Colors.deepPurple.shade400,
-          Colors.indigo.shade400,
-          Colors.blue.shade400,
-          Colors.lightBlue.shade400,
-          Colors.cyan.shade400,
-          Colors.teal.shade400,
-          Colors.green.shade400,
-          Colors.lightGreen.shade400,
-          Colors.lime.shade400,
-          Colors.yellow.shade400,
-          Colors.amber.shade400,
-          Colors.deepOrange.shade400,
-          Colors.brown.shade400,
-          Colors.blueGrey.shade400,
-        ];
-        return colors[hash.abs() % colors.length];
-    }
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '총 활동시간: ${_formatTime(totalTime)}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: 240,
+                  height: 240,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CustomPaint(
+                        size: const Size(240, 240),
+                        painter: DonutChartPainter(
+                          categoryTime: categoryTime,
+                          totalTime: totalTime,
+                          animationValue: 1.0,
+                          getCategoryColor: _getCategoryColor,
+                        ),
+                      ),
+                      Container(
+                        width: 120,
+                        height: 120,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '${(totalTime / 60).toStringAsFixed(1)}h',
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '총 시간',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ...sortedCategories.map((entry) {
+                  double percentage = (entry.value / totalTime * 100);
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: _getCategoryColor(entry.key),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            entry.key,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ),
+                        Text(
+                          '${percentage.toStringAsFixed(1)}%',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('닫기'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
