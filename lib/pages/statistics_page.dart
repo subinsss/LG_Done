@@ -248,9 +248,15 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     return {};
   }
 
-  // 일간 요약 카드 - Firebase 데이터가 없으면 적절한 메시지 표시
+  // 전날 대비 활동시간 증감량 계산
+  Future<int> _getYesterdayStudyTime() async {
+    DateTime yesterday = _selectedDay.subtract(const Duration(days: 1));
+    DailyStats? yesterdayData = await _statisticsService.getDailyStats(yesterday);
+    return yesterdayData?.studyTimeMinutes ?? 0;
+  }
+
+  // 일간 요약 카드
   Widget _buildDailySummaryCard() {
-    // Firebase 데이터가 없으면 메시지 표시
     if (_isOfflineMode) {
       return Container(
         width: double.infinity,
@@ -294,89 +300,212 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       );
     }
 
-    // Firebase 데이터를 사용한 기존 로직
     Map<String, dynamic> analysis = _getTimeTableAnalysis();
     Map<String, int> categoryTime = analysis['categoryMinutes'];
-    int totalActiveBlocks = analysis['totalActiveBlocks'];
-    int totalPlannedBlocks = analysis['totalPlannedBlocks'];
-    double completionRate = analysis['completionRate'];
-    
     int totalStudyTime = categoryTime.values.fold(0, (sum, time) => sum + time);
-    
-    // 집중도 계산 (완료율 기준)
-    String focusLevel;
-    if (completionRate < 33) {
-      focusLevel = "낮음";
-    } else if (completionRate < 66) {
-      focusLevel = "보통";
-    } else {
-      focusLevel = "높음";
-    }
-    
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '일간 요약',
-            style: TextStyle(
-              color: Colors.black,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+    double completionRate = analysis['completionRate'];
+
+    return FutureBuilder<int>(
+      future: _getYesterdayStudyTime(),
+      builder: (context, snapshot) {
+        int yesterdayTime = snapshot.data ?? 0;
+        int timeDifference = totalStudyTime - yesterdayTime;
+        String differenceText = timeDifference >= 0 ? '+${_formatTime(timeDifference)}' : '-${_formatTime(timeDifference.abs())}';
+        Color differenceColor = timeDifference >= 0 ? Colors.green.shade600 : Colors.red.shade600;
+
+        String focusLevel;
+        if (completionRate < 33) {
+          focusLevel = "낮음";
+        } else if (completionRate < 66) {
+          focusLevel = "보통";
+        } else {
+          focusLevel = "높음";
+        }
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Colors.grey.shade200,
+              width: 1,
             ),
           ),
-          const SizedBox(height: 20),
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: _buildStatItem(
-                  '총 활동시간',
-                  _formatTime(totalStudyTime),
-                  Icons.timer,
+              const Text(
+                '일간 요약',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _buildStatItem(
-                  '완료 블록',
-                  '$totalActiveBlocks/$totalPlannedBlocks',
-                  Icons.task_alt,
-                ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.timer, color: Colors.grey.shade600, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              '총 활동시간',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatTime(totalStudyTime),
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.trending_up, color: Colors.grey.shade600, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              '전날 대비',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          differenceText,
+                          style: TextStyle(
+                            color: differenceColor,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.check_circle, color: Colors.grey.shade600, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              '완료율',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${completionRate.toInt()}%',
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.psychology, color: Colors.grey.shade600, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              '집중도',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          focusLevel,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatItem(
-                  '완료율',
-                  '${completionRate.toInt()}%',
-                  Icons.check_circle,
-                ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, IconData icon, {Color? valueColor}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: Colors.grey.shade600, size: 16),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
               ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _buildStatItem(
-                  '집중도',
-                  focusLevel,
-                  Icons.psychology,
-                ),
-              ),
-            ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor ?? Colors.black,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1554,42 +1683,14 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     );
   }
 
-  Widget _buildStatItem(String label, String value, IconData icon) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: Colors.grey.shade600, size: 16),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.black,
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
+
 
   // 연간 요약 카드
   Widget _buildYearlySummaryCard() {
     int totalStudyTime = _yearlyData!.fold(0, (sum, stat) => sum + stat.totalStudyTimeMinutes);
     int totalCompleted = _yearlyData!.fold(0, (sum, stat) => sum + stat.totalCompletedTasks);
     int totalTasks = _yearlyData!.fold(0, (sum, stat) => sum + stat.totalTasks);
-    double yearlyAvg = _yearlyData!.isNotEmpty ? totalStudyTime / 12 : 0; // 연간 평균 (12개월 기준)
+    double yearlyAvg = _yearlyData!.isNotEmpty ? totalStudyTime / 12 : 0;
 
     return Container(
       key: ValueKey('yearly_summary_${_selectedYear.year}'),
@@ -1631,18 +1732,62 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           Row(
             children: [
               Expanded(
-                child: _buildStatItem(
-                  '총 활동시간',
-                  '${(totalStudyTime / 60).toInt()}시간',
-                  Icons.timer,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.timer, color: Colors.grey.shade600, size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          '총 활동시간',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${(totalStudyTime / 60).toInt()}시간',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 20),
               Expanded(
-                child: _buildStatItem(
-                  '완료율',
-                  '${totalTasks > 0 ? (totalCompleted / totalTasks * 100).toInt() : 0}%',
-                  Icons.check_circle,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.grey.shade600, size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          '완료율',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${totalTasks > 0 ? (totalCompleted / totalTasks * 100).toInt() : 0}%',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1651,18 +1796,62 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
           Row(
             children: [
               Expanded(
-                child: _buildStatItem(
-                  '연간 평균',
-                  '${(yearlyAvg / 60).toInt()}시간/월',
-                  Icons.trending_up,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.trending_up, color: Colors.grey.shade600, size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          '연간 평균',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${(yearlyAvg / 60).toInt()}시간/월',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 20),
               Expanded(
-                child: _buildStatItem(
-                  '완료 할일',
-                  '$totalCompleted/$totalTasks',
-                  Icons.task_alt,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.task_alt, color: Colors.grey.shade600, size: 16),
+                        const SizedBox(width: 4),
+                        Text(
+                          '완료 할일',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$totalCompleted/$totalTasks',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
