@@ -1656,34 +1656,43 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     int totalTasks = _weeklyData!.fold(0, (sum, stat) => sum + stat.totalTasks);
     double weeklyAvg = _weeklyData!.isNotEmpty ? totalStudyTime / 7 : 0;
 
-    // 이번 주와 지난 주의 일평균 시간 계산
-    double currentWeekAvg = _weeklyData!.length >= 7 
-        ? _weeklyData!.sublist(_weeklyData!.length - 7).fold(0, (sum, stat) => sum + stat.studyTimeMinutes) / 7
-        : weeklyAvg;
-    double lastWeekAvg = _weeklyData!.length >= 14 
-        ? _weeklyData!.sublist(_weeklyData!.length - 14, _weeklyData!.length - 7).fold(0, (sum, stat) => sum + stat.studyTimeMinutes) / 7
+    // 이번 주와 지난 주의 총 활동시간 계산
+    int currentWeekTotal = _weeklyData!.length >= 7 
+        ? _weeklyData!.sublist(_weeklyData!.length - 7).fold(0, (sum, stat) => sum + stat.studyTimeMinutes)
+        : totalStudyTime;
+    int lastWeekTotal = _weeklyData!.length >= 14 
+        ? _weeklyData!.sublist(_weeklyData!.length - 14, _weeklyData!.length - 7).fold(0, (sum, stat) => sum + stat.studyTimeMinutes)
         : 0;
 
-    // 평균 시간 차이 계산 (분 단위)
-    double difference = currentWeekAvg - lastWeekAvg;
+    // 총 활동시간 차이 계산 (분 단위)
+    int difference = currentWeekTotal - lastWeekTotal;
     String differenceText;
     Color differenceColor;
     IconData differenceIcon;
     
-    if (lastWeekAvg == 0 || difference == 0) {
-      differenceText = '-';
-      differenceColor = Colors.grey;
-      differenceIcon = Icons.remove;
+    if (lastWeekTotal == 0) {
+      if (currentWeekTotal == 0) {
+        differenceText = '-';
+        differenceColor = Colors.grey;
+        differenceIcon = Icons.remove;
+      } else {
+        differenceText = '+${currentWeekTotal}분';
+        differenceColor = Colors.green;
+        differenceIcon = Icons.arrow_upward;
+      }
     } else {
       String prefix = difference > 0 ? '+' : '';
-      differenceText = '$prefix${difference.toStringAsFixed(0)}분';
+      differenceText = '$prefix${difference}분';
       
       if (difference > 0) {
         differenceColor = Colors.green;
         differenceIcon = Icons.arrow_upward;
-      } else {
+      } else if (difference < 0) {
         differenceColor = Colors.red;
         differenceIcon = Icons.arrow_downward;
+      } else {
+        differenceColor = Colors.grey;
+        differenceIcon = Icons.remove;
       }
     }
 
@@ -1763,24 +1772,30 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
     int totalTasks = _monthlyData!.fold(0, (sum, stat) => sum + stat.totalTasks);
     double monthlyAvg = _monthlyData!.isNotEmpty ? totalStudyTime / 30 : 0;
 
-    // 이번 달과 지난 달의 일평균 시간 계산
-    double currentMonthAvg = _monthlyData!.length >= 30 
-        ? _monthlyData!.sublist(_monthlyData!.length - 30).fold(0, (sum, stat) => sum + stat.studyTimeMinutes) / 30
-        : monthlyAvg;
-    double lastMonthAvg = _monthlyData!.length >= 60 
-        ? _monthlyData!.sublist(_monthlyData!.length - 60, _monthlyData!.length - 30).fold(0, (sum, stat) => sum + stat.studyTimeMinutes) / 30
+    // 이번 달과 지난 달의 총 활동시간 계산
+    int currentMonthTotal = _monthlyData!.length >= 30 
+        ? _monthlyData!.sublist(_monthlyData!.length - 30).fold(0, (sum, stat) => sum + stat.studyTimeMinutes)
+        : totalStudyTime;
+    int lastMonthTotal = _monthlyData!.length >= 60 
+        ? _monthlyData!.sublist(_monthlyData!.length - 60, _monthlyData!.length - 30).fold(0, (sum, stat) => sum + stat.studyTimeMinutes)
         : 0;
 
-    // 평균 시간 차이 계산 (시간 단위)
-    double difference = (currentMonthAvg - lastMonthAvg) / 60;
+    // 총 활동시간 차이 계산 (시간 단위)
+    double difference = (currentMonthTotal - lastMonthTotal) / 60.0;
     String differenceText;
     Color differenceColor;
     IconData differenceIcon;
     
-    if (lastMonthAvg == 0 || difference == 0) {
-      differenceText = '-';
-      differenceColor = Colors.grey;
-      differenceIcon = Icons.remove;
+    if (lastMonthTotal == 0) {
+      if (currentMonthTotal == 0) {
+        differenceText = '-';
+        differenceColor = Colors.grey;
+        differenceIcon = Icons.remove;
+      } else {
+        differenceText = '+${(currentMonthTotal / 60.0).toStringAsFixed(1)}시간';
+        differenceColor = Colors.green;
+        differenceIcon = Icons.arrow_upward;
+      }
     } else {
       String prefix = difference > 0 ? '+' : '';
       differenceText = '$prefix${difference.toStringAsFixed(1)}시간';
@@ -1788,9 +1803,12 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
       if (difference > 0) {
         differenceColor = Colors.green;
         differenceIcon = Icons.arrow_upward;
-      } else {
+      } else if (difference < 0) {
         differenceColor = Colors.red;
         differenceIcon = Icons.arrow_downward;
+      } else {
+        differenceColor = Colors.grey;
+        differenceIcon = Icons.remove;
       }
     }
 
@@ -1822,7 +1840,7 @@ class _StatisticsPageState extends State<StatisticsPage> with TickerProviderStat
               Expanded(
                 child: _buildStatItem(
                   '총 활동시간',
-                  '${(totalStudyTime / 60).toInt()}시간',
+                  '${(totalStudyTime / 60.0).toStringAsFixed(1)}시간',
                   Icons.timer,
                 ),
               ),
