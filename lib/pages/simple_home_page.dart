@@ -1557,8 +1557,8 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                DateFormat('M월 d일 (E)').format(_selectedDay),
+                              Text(
+                DateFormat('yyyy년 M월 d일 (E)').format(_selectedDay),
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -2797,7 +2797,7 @@ class _SimpleHomePageState extends State<SimpleHomePage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '${_todos.length}개의 오늘 할일',
+                          '${DateFormat('M월 d일').format(_selectedDay)} 할일: ${_todos.length}개',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
