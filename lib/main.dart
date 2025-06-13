@@ -75,7 +75,7 @@ Future<void> main() async {
     final statsService = StatisticsService();
     
     todoService.initialize(firestore);
-    statsService.initialize(firestore);
+    await statsService.initialize();
     
     print('✅ 서비스 초기화 완료!');
     print('🔍 TodoService 상태: $todoService');
