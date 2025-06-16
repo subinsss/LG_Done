@@ -5,7 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AICharacterService {
-  static const String baseUrl = 'http://192.168.0.12:5050'; // 실제 PC IP 주소로 변경
+  static const String baseUrl = 'http://172.20.10.11:5050'; // 실제 PC IP 주소로 변경
   // 폰에서 PC의 Flask 서버에 접근하기 위해 로컬 네트워크 IP 사용
   
   // 익명 사용자 ID (로그인 없이 사용)
