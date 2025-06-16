@@ -72,7 +72,37 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
       
       if (mounted) {
         setState(() {
-          _userCharacters = characters;
+          // 현재 선택된 캐릭터 ID 확인
+          final selectedCharacterId = _selectedAICharacter?['character_id'];
+          
+          // 각 캐릭터의 선택 상태 업데이트
+          _userCharacters = characters.map((character) {
+            if (selectedCharacterId != null && character.characterId == selectedCharacterId) {
+              // 선택된 캐릭터인 경우 isSelected를 true로 설정
+              return AICharacter(
+                characterId: character.characterId,
+                userId: character.userId,
+                name: character.name,
+                prompt: character.prompt,
+                generationType: character.generationType,
+                imageUrl: character.imageUrl,
+                type: character.type,
+                isSelected: true,
+              );
+            } else {
+              // 선택되지 않은 캐릭터인 경우 isSelected를 false로 설정
+              return AICharacter(
+                characterId: character.characterId,
+                userId: character.userId,
+                name: character.name,
+                prompt: character.prompt,
+                generationType: character.generationType,
+                imageUrl: character.imageUrl,
+                type: character.type,
+                isSelected: false,
+              );
+            }
+          }).toList();
         });
       }
     } catch (e) {
@@ -116,12 +146,12 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
   Future<void> _selectCharacter(AICharacter character) async {
     try {
       // 1. 먼저 모든 캐릭터의 is_selected를 false로 변경
+      final batch = FirebaseFirestore.instance.batch();
+      
       final allCharacters = await FirebaseFirestore.instance
           .collection('characters')
           .where('is_selected', isEqualTo: true)
           .get();
-      
-      final batch = FirebaseFirestore.instance.batch();
       
       for (final doc in allCharacters.docs) {
         batch.update(doc.reference, {'is_selected': false});
@@ -149,7 +179,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('selected_character', jsonEncode(characterData));
 
-      // Firestore users 컬렉션에도 저장 (홈화면 실시간 업데이트용)
+      // Firestore users 컬렉션에도 저장
       try {
         await FirebaseFirestore.instance
             .collection('users')
@@ -166,20 +196,38 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
       if (mounted) {
         setState(() {
           _selectedAICharacter = characterData;
+          
+          // 모든 캐릭터의 선택 상태 업데이트
+          for (int i = 0; i < _userCharacters.length; i++) {
+            final currentCharacter = _userCharacters[i];
+            _userCharacters[i] = AICharacter(
+              characterId: currentCharacter.characterId,
+              userId: currentCharacter.userId,
+              name: currentCharacter.name,
+              prompt: currentCharacter.prompt,
+              generationType: currentCharacter.generationType,
+              imageUrl: currentCharacter.imageUrl,
+              type: currentCharacter.type,
+              isSelected: currentCharacter.characterId == character.characterId,
+            );
+          }
         });
         
-        // 성공 메시지 표시
+        // 선택 완료 메시지 표시 후 홈 화면으로 이동
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${character.name} 캐릭터가 선택되었습니다!'),
+            content: Text('${character.name} 캐릭터가 선택되었습니다'),
             backgroundColor: Colors.black,
-            duration: const Duration(seconds: 2),
+            duration: const Duration(seconds: 1),
           ),
         );
-        
-        // 홈화면으로 돌아가기
-        Navigator.of(context).pop(true);
+
+        // 잠시 후 홈 화면으로 이동
+        Future.delayed(const Duration(milliseconds: 500), () {
+          Navigator.pop(context);
+        });
       }
+      
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -247,7 +295,159 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
     );
   }
 
+  void _showEditDialog(AICharacter character) {
+    final TextEditingController nameController = TextEditingController(text: character.name);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.edit, color: Colors.blue.shade400),
+            const SizedBox(width: 8),
+            const Text(
+              '캐릭터 수정',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: TextField(
+          controller: nameController,
+          decoration: const InputDecoration(
+            labelText: '이름',
+            hintText: '캐릭터 이름을 입력하세요',
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              '취소',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newName = nameController.text.trim();
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('이름을 입력해주세요'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(context);
+              await _updateCharacter(character, newName, character.prompt);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.shade400,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              '저장',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
+  Future<void> _updateCharacter(AICharacter character, String newName, String newPrompt) async {
+    try {
+      // Firestore에서 캐릭터 정보 업데이트
+      await FirebaseFirestore.instance
+          .collection('characters')
+          .doc(character.characterId)
+          .update({
+        'name': newName,
+        'prompt': newPrompt,
+      });
+
+      // UI 즉시 업데이트를 위해 현재 캐릭터 목록 수정
+      if (mounted) {
+        setState(() {
+          final index = _userCharacters.indexWhere((c) => c.characterId == character.characterId);
+          if (index != -1) {
+            _userCharacters[index] = AICharacter(
+              characterId: character.characterId,
+              userId: character.userId,
+              name: newName,
+              prompt: newPrompt,
+              generationType: character.generationType,
+              imageUrl: character.imageUrl,
+              type: character.type,
+              isSelected: character.isSelected,
+            );
+          }
+        });
+      }
+
+      // 선택된 캐릭터인 경우 SharedPreferences와 users 컬렉션도 업데이트
+      if (character.isSelected || 
+          _selectedAICharacter?['character_id'] == character.characterId) {
+        final characterData = {
+          ..._selectedAICharacter!,
+          'name': newName,
+          'prompt': newPrompt,
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+
+        // SharedPreferences 업데이트
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('selected_character', jsonEncode(characterData));
+
+        // Firestore users 컬렉션 업데이트
+        try {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc('anonymous_user')
+              .set({
+            'selected_character': characterData,
+            'updated_at': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } catch (e) {
+          // Firestore 저장 실패는 무시
+        }
+
+        setState(() {
+          _selectedAICharacter = characterData;
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('캐릭터 정보가 수정되었습니다'),
+            backgroundColor: Colors.black,
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('수정에 실패했습니다: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   Future<void> _generateFromPrompt() async {
     if (_nameController.text.trim().isEmpty) {
@@ -476,7 +676,7 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
                 crossAxisCount: 2,
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
-                childAspectRatio: 0.75,
+                childAspectRatio: 0.65,
               ),
               itemCount: _userCharacters.length,
               itemBuilder: (context, index) {
@@ -488,184 +688,174 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
   }
 
   Widget _buildCharacterCard(AICharacter character) {
-    final isSelected = _selectedAICharacter?['character_id'] == character.characterId;
-    
+    final isSelected = character.isSelected || 
+        _selectedAICharacter?['character_id'] == character.characterId;
+
+    // base64 이미지 처리
+    Widget buildImage() {
+      if (character.imageUrl.startsWith('data:image')) {
+        try {
+          // base64 문자열 추출
+          final base64String = character.imageUrl.split(',')[1];
+          final Uint8List bytes = base64Decode(base64String);
+          
+          return Image.memory(
+            bytes,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              print('이미지 로딩 오류: $error');
+              return Container(
+                color: Colors.grey.shade200,
+                child: const Icon(Icons.error_outline, size: 48),
+              );
+            },
+          );
+        } catch (e) {
+          print('base64 이미지 처리 오류: $e');
+          return Container(
+            color: Colors.grey.shade200,
+            child: const Icon(Icons.error_outline, size: 48),
+          );
+        }
+      } else {
+        // 일반 URL 이미지
+        return Image.network(
+          character.imageUrl,
+          fit: BoxFit.contain,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Center(
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                    : null,
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            print('이미지 로딩 오류: $error');
+            return Container(
+              color: Colors.grey.shade200,
+              child: const Icon(Icons.error_outline, size: 48),
+            );
+          },
+        );
+      }
+    }
+
     return Card(
-      color: Colors.white,
       elevation: 4,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: isSelected ? Colors.black : Colors.grey[200]!,
-          width: isSelected ? 2 : 1,
-        ),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
-            child: Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                  child: Container(
-                    width: double.infinity,
-                    height: double.infinity,
-                    child: _buildCharacterImage(character),
-                  ),
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              child: buildImage(),
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: isSelected ? Colors.blue.shade400 : Colors.transparent,
+                  width: 2,
                 ),
-                // 삭제 버튼 (우상단)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: GestureDetector(
-                    onTap: () => _showDeleteConfirmDialog(character),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
-                        shape: BoxShape.circle,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          character.name,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.delete_outline,
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert),
                         color: Colors.white,
-                        size: 16,
+                        onSelected: (value) {
+                          if (value == 'edit') {
+                            _showEditDialog(character);
+                          } else if (value == 'delete') {
+                            _showDeleteConfirmDialog(character);
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                Icon(Icons.edit, color: Colors.grey[800]),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '수정',
+                                  style: TextStyle(color: Colors.grey[800]),
+                                ),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete, color: Colors.grey[800]),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '삭제',
+                                  style: TextStyle(color: Colors.grey[800]),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
+                    ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  character.name.isEmpty ? '이름 없는 캐릭터' : character.name,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 12),
-                // 선택 버튼 추가
-                SizedBox(
-                  width: double.infinity,
-                  height: 36,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      await _selectCharacter(character);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isSelected ? Colors.black : Colors.white,
-                      foregroundColor: isSelected ? Colors.white : Colors.black,
-                      side: BorderSide(
-                        color: Colors.black,
-                        width: 1.5,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      elevation: 0,
-                    ),
-                    child: Text(
-                      isSelected ? '✓ 선택됨' : '선택하기',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
+            padding: const EdgeInsets.all(8),
+            child: SizedBox(
+              height: 40,
+              child: ElevatedButton(
+                onPressed: () {
+                  if (!isSelected) {
+                    _selectCharacter(character);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isSelected ? Colors.blue.shade400 : Colors.white,
+                  foregroundColor: isSelected ? Colors.white : Colors.grey.shade600,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(
+                      color: isSelected ? Colors.blue.shade400 : Colors.grey.shade300,
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 캐릭터 이미지 빌더 (Base64/네트워크 이미지 구분 처리)
-  Widget _buildCharacterImage(AICharacter character) {
-    final imageUrl = character.imageUrl;
-    
-    // Base64 이미지인지 확인
-    if (imageUrl.startsWith('data:image/')) {
-      try {
-        final base64String = imageUrl.split(',')[1];
-        final Uint8List bytes = base64Decode(base64String);
-        
-        return Image.memory(
-          bytes,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          height: double.infinity,
-          cacheWidth: 400, // 메모리 사용량 최적화
-          cacheHeight: 400,
-          errorBuilder: (context, error, stackTrace) {
-            print('Base64 이미지 로딩 오류: $error');
-            return _buildErrorImage();
-          },
-        );
-      } catch (e) {
-        print('Base64 디코딩 오류: $e');
-        return _buildErrorImage();
-      }
-    } else {
-      // 네트워크 이미지
-      return Image.network(
-        imageUrl,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-        cacheWidth: 400, // 메모리 사용량 최적화
-        cacheHeight: 400,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Center(
-            child: CircularProgressIndicator(
-              color: Colors.black,
-              value: loadingProgress.expectedTotalBytes != null
-                  ? loadingProgress.cumulativeBytesLoaded /
-                      loadingProgress.expectedTotalBytes!
-                  : null,
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          print('네트워크 이미지 로딩 오류: $error');
-          return _buildErrorImage();
-        },
-      );
-    }
-  }
-
-  // 에러 시 표시할 기본 이미지
-  Widget _buildErrorImage() {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      color: Colors.grey.shade200,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.broken_image,
-            size: 48,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '이미지 로딩 실패',
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 12,
+                child: Text(
+                  isSelected ? '선택됨' : '선택하기',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
             ),
           ),
         ],
@@ -783,8 +973,6 @@ class _CharacterSettingsPageState extends State<CharacterSettingsPage>
       ),
     );
   }
-
-
 
   void _showErrorDialog(String message) {
     showDialog(
