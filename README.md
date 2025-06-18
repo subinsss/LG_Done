@@ -1,6 +1,7 @@
 # DX Project - 스마트 할일관리 & AI 캐릭터 생성 앱
 
-Flutter,firebase, flask, esp32를 활용한 현대적인 할일관리 및 AI 캐릭터 생성 애플리케이션입니다.
+Flutter,firebase, flask를 활용한 현대적인 AI할일관리 애플리케이션입니다.
+esp32기반의 타이머와도 연동 되어 사용자의 데이터를 보다 직관적으로 확인하고, 분석할 수 있습니다.
 
 ## ✨ 주요 기능
 
