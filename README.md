@@ -1,6 +1,6 @@
-# DX Project - 스마트 할일관리 앱
+# DX Project - 스마트 할일관리 & AI 캐릭터 생성 앱
 
-Flutter와 Python을 활용한 현대적인 할일관리 애플리케이션입니다.
+Flutter,firebase, flask, esp32를 활용한 현대적인 할일관리 및 AI 캐릭터 생성 애플리케이션입니다.
 
 ## ✨ 주요 기능
 
@@ -31,6 +31,18 @@ Flutter와 Python을 활용한 현대적인 할일관리 애플리케이션입�
 - 카테고리별 소요시간 통계
 - 전체/완료/대기 할일 개수 표시
 
+### 🤖 AI 캐릭터 생성
+- 프롬프트 기반 AI 캐릭터 생성
+- Stable Diffusion XL 모델 활용
+- 생성된 캐릭터 Firebase 저장
+- 캐릭터 커스터마이징 지원
+
+### 🔌 ESP32 연동
+- ESP32 디스플레이용 할일 목록 제공
+- 선택된 캐릭터 이미지 전송
+- 실시간 할일 상태 업데이트
+- 자동 이미지 리사이징 (150x150)
+
 ## 🛠 기술 스택
 
 ### 프론트엔드 (Flutter)
@@ -45,6 +57,8 @@ Flutter와 Python을 활용한 현대적인 할일관리 애플리케이션입�
 - Google Cloud Firestore
 - Pillow (이미지 처리)
 - gunicorn (WSGI HTTP 서버)
+- Hugging Face API (Stable Diffusion XL)
+- Pollinations AI
 
 ## 📱 주요 특징
 - 다크 모드 지원
@@ -83,6 +97,15 @@ Flutter와 Python을 활용한 현대적인 할일관리 애플리케이션입�
 - Firebase 프로젝트 설정 필요
 - 환경 변수 설정 (.env 파일)
 - Firebase 설정 파일 (firebase.json)
+- Hugging Face API 키 설정
+- ESP32 디스플레이 설정
+
+## 🔌 API 엔드포인트
+- `POST /generate/prompt`: AI 캐릭터 생성
+- `GET /esp-titles`: ESP32용 할일 목록 조회
+- `GET /esp-image`: ESP32용 선택된 캐릭터 이미지 조회
+- `POST /update-todo`: 할일 상태 업데이트
+- `GET /health`: 서버 상태 확인
 
 ## 📝 라이선스
 이 프로젝트는 MIT 라이선스 하에 배포됩니다. 
